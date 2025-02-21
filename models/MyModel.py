@@ -70,7 +70,7 @@ class Model(nn.Module):
         # 1) iTransformer Part
         # ----------------------
         self.inverted_embedding = DataEmbedding_inverted(
-            seq_len=configs.seq_len,
+            c_in=configs.seq_len,
             d_model=configs.d_model,
             embed_type=configs.embed,
             freq=configs.freq,
