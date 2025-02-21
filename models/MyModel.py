@@ -1,24 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# --- from iTransformer ---
-from layers.Transformer_EncDec import Encoder as InvertedEncoder
-from layers.Transformer_EncDec import EncoderLayer as InvertedEncoderLayer
+from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import DataEmbedding_inverted
-
-# --- from PatchTST ---
-from layers.Transformer_EncDec import Encoder as PatchEncoder
-from layers.Transformer_EncDec import EncoderLayer as PatchEncoderLayer
-from layers.Embed import PatchEmbedding
-
-# FlattenHead, Transpose, etc. can be reused
+from layers.Embed import DataEmbedding_inverted, PatchEmbedding
+import numpy as np
 
 
 class Transpose(nn.Module):
-    """Use this helper if you want the same transpose trick as in PatchTST."""
-
     def __init__(self, *dims, contiguous=False):
         super().__init__()
         self.dims, self.contiguous = dims, contiguous
@@ -32,55 +21,133 @@ class Transpose(nn.Module):
 
 class FlattenHead(nn.Module):
     def __init__(self, n_vars, nf, target_window, head_dropout=0):
-        """
-        n_vars: number of variables (channels)
-        nf:     total input features for the final linear (e.g. d_model * num_patches)
-        """
         super().__init__()
         self.n_vars = n_vars
         self.flatten = nn.Flatten(start_dim=-2)
         self.linear = nn.Linear(nf, target_window)
         self.dropout = nn.Dropout(head_dropout)
 
-    def forward(self, x):
-        # x: [B x n_vars x d_model x patch_num]
-        x = self.flatten(x)  # -> [B x n_vars x (d_model * patch_num)]
-        x = self.linear(x)  # -> [B x n_vars x target_window]
+    def forward(self, x):  # x: [bs x nvars x d_model x patch_num]
+        x = self.flatten(x)
+        x = self.linear(x)
         x = self.dropout(x)
         return x
 
 
+class EncoderLayer(nn.Module):
+    def __init__(
+        self,
+        configs,
+        inverted_attention,
+        patch_attention,
+        d_model,
+        d_ff=None,
+        dropout=0.1,
+        activation="relu",
+        patch_len=16,
+        stride=8,
+    ):
+        super(EncoderLayer, self).__init__()
+        d_ff = d_ff or 4 * d_model
+        padding = stride
+
+        self.inverted_attention = inverted_attention
+        self.patch_attention = patch_attention
+
+        self.patch_embedding = PatchEmbedding(
+            d_model, patch_len, stride, padding, dropout
+        )
+
+        self.head_nf = d_model * int((configs.seq_len - patch_len) / stride + 2)
+        self.head = FlattenHead(
+            configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout
+        )
+        self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
+        self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(dropout)
+        self.activation = F.relu if activation == "relu" else F.gelu
+
+    def forward(self, x, attn_mask=None, tau=None, delta=None):
+        new_x, attn = self.inverted_attention(
+            x, x, x, attn_mask=attn_mask, tau=tau, delta=delta
+        )
+        x = x + self.dropout(new_x)
+
+        x = self.norm1(x)
+
+        x_patch, n_vars = self.patch_embedding(x)
+
+        x_patch_out = self.patch_attention(x_patch)
+        x_patch_out = x_patch_out.reshape(
+            -1, n_vars, x_patch_out.shape[-2], x_patch_out.shape[-1]
+        )
+
+        x_patch_out = x_patch_out.permute(0, 1, 3, 2)
+
+        x_out = self.head(x_patch_out)
+        x_out = x_out.permute(0, 2, 1)
+
+        return self.norm2(x + x_out), attn
+
+
+class Encoder(nn.Module):
+    def __init__(self, attn_layers, conv_layers=None, norm_layer=None):
+        super(Encoder, self).__init__()
+        self.attn_layers = nn.ModuleList(attn_layers)
+        self.conv_layers = (
+            nn.ModuleList(conv_layers) if conv_layers is not None else None
+        )
+        self.norm = norm_layer
+
+    def forward(self, x, attn_mask=None, tau=None, delta=None):
+        # x [B, L, D]
+        attns = []
+        if self.conv_layers is not None:
+            for i, (attn_layer, conv_layer) in enumerate(
+                zip(self.attn_layers, self.conv_layers)
+            ):
+                delta = delta if i == 0 else None
+                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
+                x = conv_layer(x)
+                attns.append(attn)
+            x, attn = self.attn_layers[-1](x, tau=tau, delta=None)
+            attns.append(attn)
+        else:
+            for attn_layer in self.attn_layers:
+                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
+                attns.append(attn)
+
+        if self.norm is not None:
+            x = self.norm(x)
+
+        return x, attns
+
+
 class Model(nn.Module):
     """
-    Example "hybrid" model that:
-      1) Applies iTransformer’s inverted embedding + inverted transformer encoder.
-      2) Feeds that output into PatchTST’s patch embedding + patch encoder + FlattenHead.
-      3) De-normalizes.
-
-    You can adapt the forward(...) logic for the different tasks (forecasting, imputation, etc.).
+    Paper link: https://arxiv.org/abs/2310.06625
     """
 
-    def __init__(self, configs, patch_len=16, stride=8):
-        super().__init__()
+    def __init__(self, configs):
+        super(Model, self).__init__()
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
-
-        # ----------------------
-        # 1) iTransformer Part
-        # ----------------------
-        self.inverted_embedding = DataEmbedding_inverted(
-            c_in=configs.seq_len,
-            d_model=configs.d_model,
-            embed_type=configs.embed,
-            freq=configs.freq,
-            dropout=configs.dropout,
+        # Embedding
+        self.enc_embedding = DataEmbedding_inverted(
+            configs.seq_len,
+            configs.d_model,
+            configs.embed,
+            configs.freq,
+            configs.dropout,
         )
-
-        # iTransformer encoder
-        self.inverted_encoder = InvertedEncoder(
+        # Encoder
+        self.encoder = Encoder(
             [
-                InvertedEncoderLayer(
+                EncoderLayer(
+                    configs,
                     AttentionLayer(
                         FullAttention(
                             False,
@@ -88,33 +155,9 @@ class Model(nn.Module):
                             attention_dropout=configs.dropout,
                             output_attention=False,
                         ),
-                        d_model=configs.d_model,
-                        n_heads=configs.n_heads,
+                        configs.d_model,
+                        configs.n_heads,
                     ),
-                    d_model=configs.d_model,
-                    d_ff=configs.d_ff,
-                    dropout=configs.dropout,
-                    activation=configs.activation,
-                )
-                for _ in range(configs.e_layers)  # number of encoder layers
-            ],
-            norm_layer=nn.LayerNorm(configs.d_model),
-        )
-
-        # ----------------------
-        # 2) PatchTST Part
-        # ----------------------
-        padding = stride
-        self.patch_embedding = PatchEmbedding(
-            d_model=configs.d_model,
-            patch_len=patch_len,
-            stride=stride,
-            padding=padding,
-            dropout=configs.dropout,
-        )
-        self.patch_encoder = PatchEncoder(
-            [
-                PatchEncoderLayer(
                     AttentionLayer(
                         FullAttention(
                             False,
@@ -122,234 +165,120 @@ class Model(nn.Module):
                             attention_dropout=configs.dropout,
                             output_attention=False,
                         ),
-                        d_model=configs.d_model,
-                        n_heads=configs.n_heads,
+                        configs.d_model,
+                        configs.n_heads,
                     ),
-                    d_model=configs.d_model,
-                    d_ff=configs.d_ff,
+                    configs.d_model,
+                    configs.d_ff,
                     dropout=configs.dropout,
                     activation=configs.activation,
                 )
-                for _ in range(
-                    configs.e_layers
-                )  # You could make them different if you want
+                for l in range(configs.e_layers)
             ],
-            norm_layer=nn.Sequential(
-                Transpose(1, 2), nn.BatchNorm1d(configs.d_model), Transpose(1, 2)
-            ),
+            norm_layer=torch.nn.LayerNorm(configs.d_model),
         )
-
-        # 3) The head is the same FlattenHead from PatchTST
-        #   (but we pick final output window based on the task).
-        #   For forecasting tasks: output is [B, pred_len, D]
-        #   => FlattenHead produces [B, nvars, pred_len], then we do permute(0,2,1).
-        self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
-
-        if self.task_name in ["long_term_forecast", "short_term_forecast"]:
-            self.head = FlattenHead(
-                n_vars=configs.enc_in,
-                nf=self.head_nf,
-                target_window=configs.pred_len,
-                head_dropout=configs.dropout,
-            )
-        elif self.task_name in ["imputation", "anomaly_detection"]:
-            self.head = FlattenHead(
-                n_vars=configs.enc_in,
-                nf=self.head_nf,
-                target_window=configs.seq_len,
-                head_dropout=configs.dropout,
-            )
-        elif self.task_name == "classification":
-            # Example: classification with patch flatten
-            self.flatten = nn.Flatten(start_dim=-2)
+        # Decoder
+        if (
+            self.task_name == "long_term_forecast"
+            or self.task_name == "short_term_forecast"
+        ):
+            self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+        if self.task_name == "imputation":
+            self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+        if self.task_name == "anomaly_detection":
+            self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+        if self.task_name == "classification":
+            self.act = F.gelu
             self.dropout = nn.Dropout(configs.dropout)
             self.projection = nn.Linear(
-                self.head_nf * configs.enc_in, configs.num_class
+                configs.d_model * configs.enc_in, configs.num_class
             )
 
-    def forward_forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
-        """
-        Example forward pass for forecasting tasks
-        (long_term_forecast, short_term_forecast).
-        """
-        # ------------------------------------------------
-        # (A) iTransformer style normalization
-        # ------------------------------------------------
-        means = x_enc.mean(dim=1, keepdim=True)  # [B, 1, D]
+    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
+        # Normalization from Non-stationary Transformer
+        means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_enc = x_enc / stdev  # [B, L, D]
-
-        # ------------------------------------------------
-        # (B) Inverted Embedding + Inverted Transformer
-        # ------------------------------------------------
-        # 1) Embedding
-        enc_inverted = self.inverted_embedding(x_enc, x_mark_enc)  # [B, L, d_model]
-        # 2) iTransformer Encoder
-        enc_out, _ = self.inverted_encoder(enc_inverted)  # [B, L, d_model]
-
-        # ------------------------------------------------
-        # (C) PatchTST
-        # ------------------------------------------------
-        # 1) PatchEmbedding wants [B, D, L], so permute
-        enc_out = enc_out.permute(0, 2, 1)  # [B, d_model, L]
-
-        # 2) Do patch embedding -> [B*nvars, patch_num, d_model]
-        #    (In this code, "n_vars" is effectively 1 if you treat d_model as “channels”.
-        #     If your data had real "n_vars" separate from d_model, adapt accordingly.)
-        patch_x, n_vars = self.patch_embedding(
-            enc_out
-        )  # shape ~ [B*n_vars, patch_num, d_model]
-
-        # 3) Patch Encoder
-        patch_out, _ = self.patch_encoder(
-            patch_x
-        )  # same shape [B*n_vars, patch_num, d_model]
-
-        # 4) Reshape back to [B, n_vars, patch_num, d_model]
-        patch_out = patch_out.reshape(
-            -1, n_vars, patch_out.shape[-2], patch_out.shape[-1]
-        )
-        # -> [B, n_vars, patch_num, d_model]
-
-        # 5) Re-permute to [B, n_vars, d_model, patch_num]
-        patch_out = patch_out.permute(0, 1, 3, 2)
-
-        # 6) Head => [B, n_vars, pred_len]
-        dec_out = self.head(patch_out)  # shape: [B, n_vars, pred_len]
-
-        # 7) Permute => [B, pred_len, n_vars]
-        dec_out = dec_out.permute(0, 2, 1)
-
-        # ------------------------------------------------
-        # (D) De-normalize
-        # ------------------------------------------------
-        # dec_out is [B, pred_len, D]
-        # stdev, means shape: [B, 1, D], so broadcast along length dimension
-        dec_out = dec_out * stdev[:, 0, :].unsqueeze(1) + means[:, 0, :].unsqueeze(1)
-
-        return dec_out  # [B, pred_len, D]
-
-    def forward_imputation(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask):
-        """
-        Example for an imputation task.
-        You can replicate a similar logic:
-          1) do iTransformer-based normalization w.r.t. masked points
-          2) pass through iTransformer
-          3) pass through PatchTST
-          4) revert normalization
-        """
-        # (A) iTransformer style masked normalization
-        means = torch.sum(x_enc, dim=1) / torch.sum(mask == 1, dim=1)  # [B, D]
-        means = means.unsqueeze(1)  # [B, 1, D]
-        x_enc = x_enc - means
-        x_enc = x_enc.masked_fill(mask == 0, 0.0)
-        stdev = torch.sqrt(
-            torch.sum(x_enc * x_enc, dim=1) / torch.sum(mask == 1, dim=1) + 1e-5
-        )  # [B, D]
-        stdev = stdev.unsqueeze(1)  # [B, 1, D]
         x_enc /= stdev
 
-        # (B) iTransformer
-        enc_inverted = self.inverted_embedding(x_enc, x_mark_enc)
-        enc_out, _ = self.inverted_encoder(enc_inverted)
+        _, _, N = x_enc.shape
 
-        # (C) PatchTST
-        enc_out = enc_out.permute(0, 2, 1)
-        patch_x, n_vars = self.patch_embedding(enc_out)
-        patch_out, _ = self.patch_encoder(patch_x)
-        patch_out = patch_out.reshape(
-            -1, n_vars, patch_out.shape[-2], patch_out.shape[-1]
-        )
-        patch_out = patch_out.permute(0, 1, 3, 2)
-        dec_out = self.head(patch_out)  # [B, n_vars, seq_len]
-        dec_out = dec_out.permute(0, 2, 1)  # => [B, seq_len, n_vars]
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # (D) De-normalize
-        dec_out = dec_out * stdev[:, 0, :].unsqueeze(1) + means[:, 0, :].unsqueeze(1)
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
+        # De-Normalization from Non-stationary Transformer
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
         return dec_out
 
-    def forward_anomaly(self, x_enc):
-        """
-        Similar approach for anomaly_detection.
-        """
-        # (A) iTransformer style normal
-        means = x_enc.mean(dim=1, keepdim=True)
+    def imputation(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask):
+        # Normalization from Non-stationary Transformer
+        means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_enc = x_enc / stdev
+        x_enc /= stdev
 
-        # (B) iTransformer
-        emb = self.inverted_embedding(x_enc, None)
-        enc_out, _ = self.inverted_encoder(emb)
+        _, L, N = x_enc.shape
 
-        # (C) PatchTST
-        enc_out = enc_out.permute(0, 2, 1)
-        patch_x, n_vars = self.patch_embedding(enc_out)
-        patch_out, _ = self.patch_encoder(patch_x)
-        patch_out = patch_out.reshape(
-            -1, n_vars, patch_out.shape[-2], patch_out.shape[-1]
-        )
-        patch_out = patch_out.permute(0, 1, 3, 2)
-        dec_out = self.head(patch_out)  # e.g. [B, n_vars, seq_len]
-        dec_out = dec_out.permute(0, 2, 1)  # => [B, seq_len, n_vars]
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # (D) Denormalize
-        dec_out = dec_out * stdev[:, 0, :].unsqueeze(1) + means[:, 0, :].unsqueeze(1)
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
+        # De-Normalization from Non-stationary Transformer
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, L, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, L, 1))
         return dec_out
 
-    def forward_classification(self, x_enc, x_mark_enc):
-        """
-        Example classification.
-        Instead of FlattenHead we have a linear projection at the end.
-        """
-        # (A) iTransformer style normalization
-        means = x_enc.mean(dim=1, keepdim=True)
+    def anomaly_detection(self, x_enc):
+        # Normalization from Non-stationary Transformer
+        means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_enc = x_enc / stdev
+        x_enc /= stdev
 
-        # (B) iTransformer
-        emb = self.inverted_embedding(x_enc, x_mark_enc)
-        enc_out, _ = self.inverted_encoder(emb)  # [B, L, d_model]
+        _, L, N = x_enc.shape
 
-        # (C) PatchTST
-        enc_out = enc_out.permute(0, 2, 1)  # [B, d_model, L]
-        patch_x, n_vars = self.patch_embedding(enc_out)
-        patch_out, _ = self.patch_encoder(patch_x)
-        patch_out = patch_out.reshape(
-            -1, n_vars, patch_out.shape[-2], patch_out.shape[-1]
-        )
-        patch_out = patch_out.permute(0, 1, 3, 2)  # [B, n_vars, d_model, patch_num]
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, None)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # (D) flatten + final linear for classification
-        #     (we assigned self.flatten, self.dropout, self.projection in __init__)
-        output = self.flatten(patch_out)  # => [B, n_vars * d_model * patch_num]
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
+        # De-Normalization from Non-stationary Transformer
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, L, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, L, 1))
+        return dec_out
+
+    def classification(self, x_enc, x_mark_enc):
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, None)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
+
+        # Output
+        output = self.act(
+            enc_out
+        )  # the output transformer encoder/decoder embeddings don't include non-linearity
         output = self.dropout(output)
-        output = output.reshape(output.shape[0], -1)
-        output = self.projection(output)  # => [B, num_class]
+        output = output.reshape(output.shape[0], -1)  # (batch_size, c_in * d_model)
+        output = self.projection(output)  # (batch_size, num_classes)
         return output
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask=None):
-        if self.task_name in ["long_term_forecast", "short_term_forecast"]:
-            dec_out = self.forward_forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
-            # if you want only the last self.pred_len, usually we do
-            return dec_out[:, -self.pred_len :, :]  # [B, pred_len, D]
-
-        elif self.task_name == "imputation":
-            dec_out = self.forward_imputation(
-                x_enc, x_mark_enc, x_dec, x_mark_dec, mask
-            )
+        if (
+            self.task_name == "long_term_forecast"
+            or self.task_name == "short_term_forecast"
+        ):
+            dec_out = self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)
+            return dec_out[:, -self.pred_len :, :]  # [B, L, D]
+        if self.task_name == "imputation":
+            dec_out = self.imputation(x_enc, x_mark_enc, x_dec, x_mark_dec, mask)
             return dec_out  # [B, L, D]
-
-        elif self.task_name == "anomaly_detection":
-            dec_out = self.forward_anomaly(x_enc)
+        if self.task_name == "anomaly_detection":
+            dec_out = self.anomaly_detection(x_enc)
             return dec_out  # [B, L, D]
-
-        elif self.task_name == "classification":
-            dec_out = self.forward_classification(x_enc, x_mark_enc)
-            return dec_out  # [B, num_class]
-
-        else:
-            # default or raise an error
-            return None
+        if self.task_name == "classification":
+            dec_out = self.classification(x_enc, x_mark_enc)
+            return dec_out  # [B, N]
+        return None
