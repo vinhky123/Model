@@ -22,7 +22,7 @@ class DataEmbedding_inverted(nn.Module):
             bias=False,
         )
         """
-        pe = torch.zeros(1, n_vars, d_model)
+        pe = torch.zeros(1, n_vars + 4, d_model)
         self.pe = nn.Parameter(pe)
 
         self.value_embedding = nn.Linear(c_in, d_model)
@@ -31,7 +31,6 @@ class DataEmbedding_inverted(nn.Module):
     def forward(self, x, x_mark):
         x = x.permute(0, 2, 1)
         B, _, _ = x.shape
-        print(f"X trước khi embed {x.shape}")
 
         # x: [Batch Variate Seq_len]
         if x_mark is None:
@@ -39,8 +38,6 @@ class DataEmbedding_inverted(nn.Module):
         else:
             x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
         # x: [Batch Variate d_model]
-
-        print(f"X sau khi embed {x.shape}")
 
         x = x + self.pe.repeat(B, 1, 1)
         return x
