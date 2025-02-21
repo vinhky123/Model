@@ -70,7 +70,7 @@ class EncoderLayer(nn.Module):
         self.activation = F.relu if activation == "relu" else F.gelu
 
     def forward(self, x, attn_mask=None, tau=None, delta=None):
-        new_x, attn = self.inverted_attention(
+        new_x = self.inverted_attention(
             x, x, x, attn_mask=attn_mask, tau=tau, delta=delta
         )[0]
         x = x + self.dropout(new_x)
