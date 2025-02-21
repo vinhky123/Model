@@ -50,7 +50,7 @@ class FlattenHead(nn.Module):
         return x
 
 
-class iPatchTST(nn.Module):
+class Model(nn.Module):
     """
     Example "hybrid" model that:
       1) Applies iTransformer’s inverted embedding + inverted transformer encoder.
