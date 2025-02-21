@@ -72,14 +72,15 @@ class EncoderLayer(nn.Module):
     def forward(self, x, attn_mask=None, tau=None, delta=None):
         new_x, attn = self.inverted_attention(
             x, x, x, attn_mask=attn_mask, tau=tau, delta=delta
-        )
+        )[0]
         x = x + self.dropout(new_x)
 
         x = self.norm1(x)
 
         x_patch, n_vars = self.patch_embedding(x)
-
-        x_patch_out = self.patch_attention(x_patch)
+        x_patch_out = self.patch_attention(
+            x_patch, x_patch, x_patch, attn_mask=attn_mask
+        )[0]
         x_patch_out = x_patch_out.reshape(
             -1, n_vars, x_patch_out.shape[-2], x_patch_out.shape[-1]
         )
