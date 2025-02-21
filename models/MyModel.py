@@ -12,16 +12,14 @@ class DataEmbedding_inverted(nn.Module):
         self, c_in, n_vars, d_model, embed_type="fixed", freq="h", dropout=0.1
     ):
         super(DataEmbedding_inverted, self).__init__()
-        """
         self.conv = nn.Conv1d(
-            in_channels=n_var,
-            out_channels=n_var,
+            in_channels=n_vars,
+            out_channels=n_vars,
             kernel_size=3,
             padding=1,
             padding_mode="circular",
             bias=False,
         )
-        """
         pe = torch.zeros(1, n_vars + 4, d_model)
         self.pe = nn.Parameter(pe)
 
@@ -38,7 +36,7 @@ class DataEmbedding_inverted(nn.Module):
         else:
             x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
         # x: [Batch Variate d_model]
-
+        x = self.conv(x)
         x = x + self.pe.repeat(B, 1, 1)
         return x
 
