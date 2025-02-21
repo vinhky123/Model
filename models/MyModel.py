@@ -3,127 +3,43 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import DataEmbedding_inverted, PatchEmbedding
+from layers.Embed import PositionalEmbedding
 import numpy as np
 
 
-class Transpose(nn.Module):
-    def __init__(self, *dims, contiguous=False):
-        super().__init__()
-        self.dims, self.contiguous = dims, contiguous
-
-    def forward(self, x):
-        if self.contiguous:
-            return x.transpose(*self.dims).contiguous()
-        else:
-            return x.transpose(*self.dims)
-
-
-class FlattenHead(nn.Module):
-    def __init__(self, n_vars, nf, target_window, head_dropout=0):
-        super().__init__()
-        self.n_vars = n_vars
-        self.flatten = nn.Flatten(start_dim=-2)
-        self.linear = nn.Linear(nf, target_window)
-        self.dropout = nn.Dropout(head_dropout)
-
-    def forward(self, x):  # x: [bs x nvars x d_model x patch_num]
-        x = self.flatten(x)
-        x = self.linear(x)
-        x = self.dropout(x)
-        return x
-
-
-class EncoderLayer(nn.Module):
+class DataEmbedding_inverted(nn.Module):
     def __init__(
-        self,
-        configs,
-        inverted_attention,
-        patch_attention,
-        d_model,
-        d_ff=None,
-        dropout=0.1,
-        activation="relu",
-        patch_len=16,
-        stride=8,
+        self, c_in, n_vars, d_model, embed_type="fixed", freq="h", dropout=0.1
     ):
-        super(EncoderLayer, self).__init__()
-        d_ff = d_ff or 4 * d_model
-        padding = stride
-
-        self.inverted_attention = inverted_attention
-        self.patch_attention = patch_attention
-
-        self.patch_embedding = PatchEmbedding(
-            d_model, patch_len, stride, padding, dropout
+        super(DataEmbedding_inverted, self).__init__()
+        """
+        self.conv = nn.Conv1d(
+            in_channels=n_var,
+            out_channels=n_var,
+            kernel_size=3,
+            padding=1,
+            padding_mode="circular",
+            bias=False,
         )
+        """
+        pe = torch.zeros(1, n_vars, d_model)
+        self.pe = nn.Parameter(pe)
 
-        self.head_nf = d_model * int((configs.seq_len - patch_len) / stride + 2)
-        self.head = FlattenHead(
-            configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout
-        )
-        self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
-        self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-        self.activation = F.relu if activation == "relu" else F.gelu
+        self.value_embedding = nn.Linear(c_in, d_model)
+        self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, x, attn_mask=None, tau=None, delta=None):
-        new_x = self.inverted_attention(
-            x, x, x, attn_mask=attn_mask, tau=tau, delta=delta
-        )[0]
-        x = x + self.dropout(new_x)
+    def forward(self, x, x_mark):
+        x = x.permute(0, 2, 1)
+        B, _, _ = x.shape
 
-        x = self.norm1(x)
-
-        x_patch, n_vars = self.patch_embedding(x)
-        x_patch_out = self.patch_attention(
-            x_patch, x_patch, x_patch, attn_mask=attn_mask
-        )[0]
-        x_patch_out = x_patch_out.reshape(
-            -1, n_vars, x_patch_out.shape[-2], x_patch_out.shape[-1]
-        )
-
-        x_patch_out = x_patch_out.permute(0, 1, 3, 2)
-
-        x_out = self.head(x_patch_out)
-        x_out = x_out.permute(0, 2, 1)
-
-        return self.norm2(x + x_out), attn
-
-
-class Encoder(nn.Module):
-    def __init__(self, attn_layers, conv_layers=None, norm_layer=None):
-        super(Encoder, self).__init__()
-        self.attn_layers = nn.ModuleList(attn_layers)
-        self.conv_layers = (
-            nn.ModuleList(conv_layers) if conv_layers is not None else None
-        )
-        self.norm = norm_layer
-
-    def forward(self, x, attn_mask=None, tau=None, delta=None):
-        # x [B, L, D]
-        attns = []
-        if self.conv_layers is not None:
-            for i, (attn_layer, conv_layer) in enumerate(
-                zip(self.attn_layers, self.conv_layers)
-            ):
-                delta = delta if i == 0 else None
-                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
-                x = conv_layer(x)
-                attns.append(attn)
-            x, attn = self.attn_layers[-1](x, tau=tau, delta=None)
-            attns.append(attn)
+        # x: [Batch Variate Seq_len]
+        if x_mark is None:
+            x = self.value_embedding(x)
         else:
-            for attn_layer in self.attn_layers:
-                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
-                attns.append(attn)
-
-        if self.norm is not None:
-            x = self.norm(x)
-
-        return x, attns
+            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
+        # x: [Batch Variate d_model]
+        x = x + self.pe.repeat(B, 1, 1)
+        return x
 
 
 class Model(nn.Module):
@@ -139,6 +55,7 @@ class Model(nn.Module):
         # Embedding
         self.enc_embedding = DataEmbedding_inverted(
             configs.seq_len,
+            configs.enc_in,
             configs.d_model,
             configs.embed,
             configs.freq,
@@ -148,17 +65,6 @@ class Model(nn.Module):
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    configs,
-                    AttentionLayer(
-                        FullAttention(
-                            False,
-                            configs.factor,
-                            attention_dropout=configs.dropout,
-                            output_attention=False,
-                        ),
-                        configs.d_model,
-                        configs.n_heads,
-                    ),
                     AttentionLayer(
                         FullAttention(
                             False,
@@ -183,7 +89,7 @@ class Model(nn.Module):
             self.task_name == "long_term_forecast"
             or self.task_name == "short_term_forecast"
         ):
-            self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+            self.projection = nn.Linear(configs.d_model, configs.pred_len, bias=True)
         if self.task_name == "imputation":
             self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
         if self.task_name == "anomaly_detection":
