@@ -113,21 +113,23 @@ class EncoderLayer(nn.Module):
         x = x + self.dropout(new_x)
         x = self.norm1(x)
 
-        last_patches = x[:, -1, :].unsqueeze(1)
+        last_patch = x[:, -1, :].unsqueeze(1)
 
-        new_x, attn_var = self.variate_attention(
-            last_patches,
-            last_patches,
-            last_patches,
+        new_last_patch, attn_var = self.variate_attention(
+            last_patch,
+            last_patch,
+            last_patch,
             attn_mask=attn_mask,
             tau=tau,
             delta=delta,
         )
 
-        x[:, 1, :] = x[:, 1, :] + self.dropout(new_x).squeeze(1)
+        last_patch = last_patch + self.dropout(new_last_patch)
+        x[:, -1, :] = last_patch.squeeze(1)
+
         x = self.norm2(x)
 
-        return x, (attn, attn_var)
+        return x, attn
 
 
 class Encoder(nn.Module):
