@@ -125,6 +125,7 @@ class EncoderLayer(nn.Module):
         )
 
         last_patch = last_patch + self.dropout(new_last_patch)
+        x = x.clone()
         x[:, -1, :] = last_patch.squeeze(1)
 
         x = self.norm2(x)
