@@ -188,5 +188,7 @@ class Model(nn.Module):
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         if self.task_name == "long_term_forecast":
-            return self.forecast(x_enc)[:, -self.pred_len :, :]
+            return self.forecast(x_enc, x_mark_enc, x_dec, x_mark_dec)[
+                :, -self.pred_len :, :
+            ]
         return None
