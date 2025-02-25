@@ -115,7 +115,7 @@ class Model(nn.Module):
 
         B, L, N = x_enc.shape
 
-        x_enc = self.pe(x_enc)
+        x_enc = x_enc + self.pe(x_enc)
 
         # Embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)
