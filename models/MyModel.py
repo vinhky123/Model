@@ -114,11 +114,11 @@ class Model(nn.Module):
         x_enc /= stdev
 
         B, L, N = x_enc.shape
-        """
+
         x_enc = x_enc.permute(0, 2, 1)
         x_enc = self.ffe_encoder(x_enc)
         x_enc = x_enc.permute(0, 2, 1)
-        """
+
         # Embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)
         enc_out, attns = self.encoder(enc_out, attn_mask=None)
