@@ -64,7 +64,7 @@ class Model(nn.Module):
             configs.freq,
             configs.dropout,
         )
-        self.pe = PositionalEmbedding(configs.seq_len)
+        self.pe = PositionalEmbedding(configs.enc_in)
 
         # Encoder
         self.encoder = Encoder(
