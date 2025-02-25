@@ -1,203 +1,75 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch import nn
+from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-import math
+from layers.Embed import DataEmbedding_inverted
+import numpy as np
 
 
-class PositionalEmbedding(nn.Module):
-    def __init__(self, d_model, max_len=5000):
-        super(PositionalEmbedding, self).__init__()
-        # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model).float()
-        pe.require_grad = False
+class FourierFeatureEncoding(nn.Module):
+    def __init__(self, sequence_length, num_frequencies):
+        super(FourierFeatureEncoding, self).__init__()
+        self.sequence_length = sequence_length
+        self.num_frequencies = num_frequencies
 
-        position = torch.arange(0, max_len).float().unsqueeze(1)
-        div_term = (
-            torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)
-        ).exp()
-
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-
-        pe = pe.unsqueeze(0)
-        self.register_buffer("pe", pe)
+        self.B_matrix = nn.Parameter(
+            torch.randn(num_frequencies, sequence_length) * 2 * np.pi,
+            requires_grad=False,
+        )
 
     def forward(self, x):
-        return self.pe[:, : x.size(1)]
+        B, F, S = x.shape
+
+        x_proj = torch.einsum("bfs,ms->bfm", x, self.B_matrix)
+
+        fourier_features = torch.cat(
+            [torch.sin(x_proj), torch.cos(x_proj)], dim=-1
+        )  # (B, F, M, 2)
+
+        fourier_features = fourier_features.view(B, F, -1)  # (B, F, 2M)
+
+        return fourier_features
 
 
-class PatchEmbedding(nn.Module):
-    def __init__(self, d_model, patch_len, stride, padding, dropout):
-        super(PatchEmbedding, self).__init__()
-        # Patching
-        self.patch_len = patch_len
-        self.stride = stride
-        self.padding_patch_layer = nn.ReplicationPad1d((0, padding))
+class DataEmbedding_inverted(nn.Module):
+    def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
+        super(DataEmbedding_inverted, self).__init__()
+        self.value_embedding = nn.Linear(c_in, d_model)
+        self.dropout = nn.Dropout(p=dropout)
 
-        # Backbone, Input encoding: projection of feature vectors onto a d-dim vector space
-        self.value_embedding = nn.Linear(patch_len, d_model, bias=False)
-
-        # Positional embedding
-        self.position_embedding = PositionalEmbedding(d_model)
-
-        # Residual dropout
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x):
-        # do patching
-        n_vars = x.shape[1]
-        x = self.padding_patch_layer(x)
-        x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
-        x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
-        # Input encoding
-        x = self.value_embedding(x) + self.position_embedding(x)
-        return self.dropout(x), n_vars
-
-
-class Transpose(nn.Module):
-    def __init__(self, *dims, contiguous=False):
-        super().__init__()
-        self.dims, self.contiguous = dims, contiguous
-
-    def forward(self, x):
-        if self.contiguous:
-            return x.transpose(*self.dims).contiguous()
+    def forward(self, x, x_mark):
+        x = x.permute(0, 2, 1)
+        # x: [Batch Variate Time]
+        if x_mark is None:
+            x = self.value_embedding(x)
         else:
-            return x.transpose(*self.dims)
-
-
-class FlattenHead(nn.Module):
-    def __init__(self, n_vars, nf, target_window, head_dropout=0):
-        super().__init__()
-        self.n_vars = n_vars
-        self.flatten = nn.Flatten(start_dim=-2)
-        self.linear = nn.Linear(nf, target_window)
-        self.dropout = nn.Dropout(head_dropout)
-
-    def forward(self, x):  # x: [bs x nvars x d_model x patch_num]
-        x = self.flatten(x)
-        x = self.linear(x)
-        x = self.dropout(x)
-        return x
-
-
-class EncoderLayer(nn.Module):
-    def __init__(
-        self,
-        patch_attention,
-        variate_attention,
-        d_model,
-        d_ff=None,
-        dropout=0.1,
-        activation="relu",
-    ):
-        super(EncoderLayer, self).__init__()
-        d_ff = d_ff or 4 * d_model
-
-        self.patch_attention = patch_attention
-        self.variate_attention = variate_attention
-
-        self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
-        self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.dropout = nn.Dropout(dropout)
-
-        self.activation = F.relu if activation == "relu" else F.gelu
-
-    def forward(self, x, attn_mask=None, tau=None, delta=None):
-        new_x, attn = self.patch_attention(
-            x, x, x, attn_mask=attn_mask, tau=tau, delta=delta
-        )
-        x = x + self.dropout(new_x)
-        x = self.norm1(x)
-
-        last_patch = x[:, -1, :].unsqueeze(1)
-
-        new_last_patch, attn_var = self.variate_attention(
-            last_patch,
-            last_patch,
-            last_patch,
-            attn_mask=attn_mask,
-            tau=tau,
-            delta=delta,
-        )
-
-        last_patch = last_patch + self.dropout(new_last_patch)
-        x = x.clone()
-        x[:, -1, :] = last_patch.squeeze(1)
-
-        x = self.norm2(x)
-
-        return x, attn
-
-
-class Encoder(nn.Module):
-    def __init__(self, attn_layers, conv_layers=None, norm_layer=None):
-        super(Encoder, self).__init__()
-        self.attn_layers = nn.ModuleList(attn_layers)
-        self.conv_layers = (
-            nn.ModuleList(conv_layers) if conv_layers is not None else None
-        )
-        self.norm = norm_layer
-
-    def forward(self, x, attn_mask=None, tau=None, delta=None):
-        # x [B, L, D]
-        attns = []
-        if self.conv_layers is not None:
-            for i, (attn_layer, conv_layer) in enumerate(
-                zip(self.attn_layers, self.conv_layers)
-            ):
-                delta = delta if i == 0 else None
-                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
-                x = conv_layer(x)
-                attns.append(attn)
-            x, attn = self.attn_layers[-1](x, tau=tau, delta=None)
-            attns.append(attn)
-        else:
-            for attn_layer in self.attn_layers:
-                x, attn = attn_layer(x, attn_mask=attn_mask, tau=tau, delta=delta)
-                attns.append(attn)
-
-        if self.norm is not None:
-            x = self.norm(x)
-
-        return x, attns
+            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
+        # x: [Batch Variate d_model]
+        return self.dropout(x)
 
 
 class Model(nn.Module):
 
-    def __init__(self, configs, patch_len=16, stride=8):
-        """
-        patch_len: int, patch len for patch_embedding
-        stride: int, stride for patch_embedding
-        """
-        super().__init__()
+    def __init__(self, configs):
+        super(Model, self).__init__()
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
-        padding = stride
-
-        # patching and embedding
-        self.patch_embedding = PatchEmbedding(
-            configs.d_model, patch_len, stride, padding, configs.dropout
+        # Embedding
+        self.enc_embedding = DataEmbedding_inverted(
+            configs.seq_len,
+            configs.d_model,
+            configs.embed,
+            configs.freq,
+            configs.dropout,
         )
+        self.ffe_encoder = FourierFeatureEncoding(configs.seq_len, 48)
 
         # Encoder
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    AttentionLayer(
-                        FullAttention(
-                            False,
-                            configs.factor,
-                            attention_dropout=configs.dropout,
-                            output_attention=False,
-                        ),
-                        configs.d_model,
-                        configs.n_heads,
-                    ),
                     AttentionLayer(
                         FullAttention(
                             False,
@@ -215,35 +87,23 @@ class Model(nn.Module):
                 )
                 for l in range(configs.e_layers)
             ],
-            norm_layer=nn.Sequential(
-                Transpose(1, 2), nn.BatchNorm1d(configs.d_model), Transpose(1, 2)
-            ),
+            norm_layer=torch.nn.LayerNorm(configs.d_model),
         )
-
-        # Prediction Head
-        self.head_nf = configs.d_model * int((configs.seq_len - patch_len) / stride + 2)
+        # Decoder
         if (
             self.task_name == "long_term_forecast"
             or self.task_name == "short_term_forecast"
         ):
-            self.head = FlattenHead(
-                configs.enc_in,
-                self.head_nf,
-                configs.pred_len,
-                head_dropout=configs.dropout,
-            )
-        elif self.task_name == "imputation" or self.task_name == "anomaly_detection":
-            self.head = FlattenHead(
-                configs.enc_in,
-                self.head_nf,
-                configs.seq_len,
-                head_dropout=configs.dropout,
-            )
-        elif self.task_name == "classification":
-            self.flatten = nn.Flatten(start_dim=-2)
+            self.projection = nn.Linear(configs.d_model, configs.pred_len, bias=True)
+        if self.task_name == "imputation":
+            self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+        if self.task_name == "anomaly_detection":
+            self.projection = nn.Linear(configs.d_model, configs.seq_len, bias=True)
+        if self.task_name == "classification":
+            self.act = F.gelu
             self.dropout = nn.Dropout(configs.dropout)
             self.projection = nn.Linear(
-                self.head_nf * configs.enc_in, configs.num_class
+                configs.d_model * configs.enc_in, configs.num_class
             )
 
     def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
@@ -253,25 +113,17 @@ class Model(nn.Module):
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_enc /= stdev
 
-        # do patching and embedding
+        B, L, N = x_enc.shape
+
         x_enc = x_enc.permute(0, 2, 1)
-        # u: [bs * nvars x patch_num x d_model]
-        enc_out, n_vars = self.patch_embedding(x_enc)
+        x_enc = self.ffe_encoder(x_enc)
+        x_enc = x_enc.permute(0, 2, 1)
 
-        # Encoder
-        # z: [bs * nvars x patch_num x d_model]
-        enc_out, attns = self.encoder(enc_out)
-        # z: [bs x nvars x patch_num x d_model]
-        enc_out = torch.reshape(
-            enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
-        )
-        # z: [bs x nvars x d_model x patch_num]
-        enc_out = enc_out.permute(0, 1, 3, 2)
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # Decoder
-        dec_out = self.head(enc_out)  # z: [bs x nvars x target_window]
-        dec_out = dec_out.permute(0, 2, 1)
-
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
         # De-Normalization from Non-stationary Transformer
         dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
         dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
@@ -279,38 +131,21 @@ class Model(nn.Module):
 
     def imputation(self, x_enc, x_mark_enc, x_dec, x_mark_dec, mask):
         # Normalization from Non-stationary Transformer
-        means = torch.sum(x_enc, dim=1) / torch.sum(mask == 1, dim=1)
-        means = means.unsqueeze(1).detach()
+        means = x_enc.mean(1, keepdim=True).detach()
         x_enc = x_enc - means
-        x_enc = x_enc.masked_fill(mask == 0, 0)
-        stdev = torch.sqrt(
-            torch.sum(x_enc * x_enc, dim=1) / torch.sum(mask == 1, dim=1) + 1e-5
-        )
-        stdev = stdev.unsqueeze(1).detach()
+        stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_enc /= stdev
 
-        # do patching and embedding
-        x_enc = x_enc.permute(0, 2, 1)
-        # u: [bs * nvars x patch_num x d_model]
-        enc_out, n_vars = self.patch_embedding(x_enc)
+        _, L, N = x_enc.shape
 
-        # Encoder
-        # z: [bs * nvars x patch_num x d_model]
-        enc_out, attns = self.encoder(enc_out)
-        # z: [bs x nvars x patch_num x d_model]
-        enc_out = torch.reshape(
-            enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
-        )
-        # z: [bs x nvars x d_model x patch_num]
-        enc_out = enc_out.permute(0, 1, 3, 2)
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # Decoder
-        dec_out = self.head(enc_out)  # z: [bs x nvars x target_window]
-        dec_out = dec_out.permute(0, 2, 1)
-
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
         # De-Normalization from Non-stationary Transformer
-        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
-        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, L, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, L, 1))
         return dec_out
 
     def anomaly_detection(self, x_enc):
@@ -320,56 +155,29 @@ class Model(nn.Module):
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_enc /= stdev
 
-        # do patching and embedding
-        x_enc = x_enc.permute(0, 2, 1)
-        # u: [bs * nvars x patch_num x d_model]
-        enc_out, n_vars = self.patch_embedding(x_enc)
+        _, L, N = x_enc.shape
 
-        # Encoder
-        # z: [bs * nvars x patch_num x d_model]
-        enc_out, attns = self.encoder(enc_out)
-        # z: [bs x nvars x patch_num x d_model]
-        enc_out = torch.reshape(
-            enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
-        )
-        # z: [bs x nvars x d_model x patch_num]
-        enc_out = enc_out.permute(0, 1, 3, 2)
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, None)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # Decoder
-        dec_out = self.head(enc_out)  # z: [bs x nvars x target_window]
-        dec_out = dec_out.permute(0, 2, 1)
-
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
         # De-Normalization from Non-stationary Transformer
-        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
-        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.seq_len, 1))
+        dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, L, 1))
+        dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, L, 1))
         return dec_out
 
     def classification(self, x_enc, x_mark_enc):
-        # Normalization from Non-stationary Transformer
-        means = x_enc.mean(1, keepdim=True).detach()
-        x_enc = x_enc - means
-        stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_enc /= stdev
+        # Embedding
+        enc_out = self.enc_embedding(x_enc, None)
+        enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        # do patching and embedding
-        x_enc = x_enc.permute(0, 2, 1)
-        # u: [bs * nvars x patch_num x d_model]
-        enc_out, n_vars = self.patch_embedding(x_enc)
-
-        # Encoder
-        # z: [bs * nvars x patch_num x d_model]
-        enc_out, attns = self.encoder(enc_out)
-        # z: [bs x nvars x patch_num x d_model]
-        enc_out = torch.reshape(
-            enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
-        )
-        # z: [bs x nvars x d_model x patch_num]
-        enc_out = enc_out.permute(0, 1, 3, 2)
-
-        # Decoder
-        output = self.flatten(enc_out)
+        # Output
+        output = self.act(
+            enc_out
+        )  # the output transformer encoder/decoder embeddings don't include non-linearity
         output = self.dropout(output)
-        output = output.reshape(output.shape[0], -1)
+        output = output.reshape(output.shape[0], -1)  # (batch_size, c_in * d_model)
         output = self.projection(output)  # (batch_size, num_classes)
         return output
 
