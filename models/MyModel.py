@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import DataEmbedding_inverted
+from layers.Embed import DataEmbedding_inverted, PositionalEmbedding
 import numpy as np
 
 
@@ -64,7 +64,7 @@ class Model(nn.Module):
             configs.freq,
             configs.dropout,
         )
-        self.ffe_encoder = FourierFeatureEncoding(configs.seq_len, 48)
+        self.pe = PositionalEmbedding(configs.seq_len)
 
         # Encoder
         self.encoder = Encoder(
@@ -115,9 +115,7 @@ class Model(nn.Module):
 
         B, L, N = x_enc.shape
 
-        x_enc = x_enc.permute(0, 2, 1)
-        x_enc = self.ffe_encoder(x_enc)
-        x_enc = x_enc.permute(0, 2, 1)
+        x_enc = self.pe(x_enc)
 
         # Embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)
