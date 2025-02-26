@@ -422,9 +422,7 @@ class GraphAttention(nn.Module):
         padded_dist = torch.full((330, 330), 1e4).cuda()
 
         padded_dist[:325, :325] = self.dist
-
-        dist_scale = torch.exp(-(padded_dist**2))
-        dist_score = self.dist_projection(dist_scale).unsqueeze(0).unsqueeze(0)
+        dist_score = self.dist_projection(padded_dist).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.expand(B, 8, S, S)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
