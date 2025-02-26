@@ -64,7 +64,6 @@ class Model(nn.Module):
             configs.freq,
             configs.dropout,
         )
-        self.pe = PositionalEmbedding(configs.enc_in)
 
         # Encoder
         self.encoder = Encoder(
@@ -89,6 +88,14 @@ class Model(nn.Module):
             ],
             norm_layer=torch.nn.LayerNorm(configs.d_model),
         )
+        self.lstm = nn.LSTM(
+            input_size=configs.pred_len,
+            hidden_size=configs.pred_len * 4,
+            num_layers=1,
+            batch_first=True,
+        )
+
+        self.decoder = nn.Linear(configs.pred_len * 4, configs.pred_len, bias=True)
         # Decoder
         if (
             self.task_name == "long_term_forecast"
@@ -114,14 +121,20 @@ class Model(nn.Module):
         x_enc /= stdev
 
         B, L, N = x_enc.shape
-
+        """
         x_enc = x_enc + self.pe(x_enc)
+        """
 
         # Embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)
         enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
+        dec_out = self.projection(enc_out)[:, :N, :]
+        dec_out, _ = self.lstm(dec_out)
+
+        dec_out = self.decoder(dec_out)
+        dec_out = dec_out.permute(0, 2, 1)
+
         # De-Normalization from Non-stationary Transformer
         dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
         dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
