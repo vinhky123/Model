@@ -1,4 +1,5 @@
-dataset
-results
-test_results
+dataset/
+results/
+test_results/
+
 result_long_term_forecast.txt
