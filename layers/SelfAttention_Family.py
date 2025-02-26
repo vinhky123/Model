@@ -360,7 +360,39 @@ class TwoStageAttentionLayer(nn.Module):
         return final_out
 
 
-class ALiBiAttention(nn.Module):
+class GraphAttentionLayer(nn.Module):
+    def __init__(self, attention, d_model, n_heads, d_keys=None, d_values=None):
+        super(GraphAttentionLayer, self).__init__()
+
+        d_keys = d_keys or (d_model // n_heads)
+        d_values = d_values or (d_model // n_heads)
+
+        self.inner_attention = attention
+
+        self.query_projection = nn.Linear(d_model, d_keys * n_heads)
+        self.key_projection = nn.Linear(d_model, d_keys * n_heads)
+        self.value_projection = nn.Linear(d_model, d_values * n_heads)
+        self.out_projection = nn.Linear(d_values * n_heads, d_model)
+        self.n_heads = n_heads
+
+    def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
+        B, L, _ = queries.shape
+        _, S, _ = keys.shape
+        H = self.n_heads
+
+        queries = self.query_projection(queries).view(B, L, H, -1)
+        keys = self.key_projection(keys).view(B, S, H, -1)
+        values = self.value_projection(values).view(B, S, H, -1)
+
+        out, attn = self.inner_attention(
+            queries, keys, values, attn_mask, tau=tau, delta=delta
+        )
+        out = out.view(B, L, -1)
+
+        return self.out_projection(out), attn
+
+
+class GraphAttention(nn.Module):
     def __init__(
         self,
         mask_flag=True,
@@ -369,38 +401,39 @@ class ALiBiAttention(nn.Module):
         attention_dropout=0.1,
         output_attention=False,
     ):
-        super(ALiBiAttention, self).__init__()
+        super(GraphAttention, self).__init__()
+
+        self.dist_projection = nn.Linear(330, 330)
+
+        self.dist = (
+            torch.from_numpy(np.load("./dataset/PEMS/PEMS_BAY/dist.npy")).float().cuda()
+        )
+
         self.scale = scale
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
-
-    def create_alibi_bias(self, B, L, H, device):
-        """
-        Tạo bias ALiBi có kích thước [B, H, L, L]
-        """
-        slopes = torch.tensor([2 ** (-8 * (i / H)) for i in range(H)], device=device)
-        distance = torch.arange(L, device=device).view(1, 1, L) - torch.arange(
-            L, device=device
-        ).view(1, L, 1)
-        distance = distance.abs().expand(B, H, L, L)
-        alibi_bias = -slopes.view(1, H, 1, 1) * distance
-        return alibi_bias
 
     def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        padded_dist = torch.full((330, 330), 1e4).cuda()
 
-        # Áp dụng ALiBi bias
-        alibi_bias = self.create_alibi_bias(B, L, H, queries.device)
-        scores += alibi_bias
+        padded_dist[:325, :325] = self.dist
+
+        dist_scale = torch.exp(-(padded_dist**2))
+        dist_score = self.dist_projection(dist_scale).unsqueeze(0).unsqueeze(0)
+        dist_score = dist_score.expand(B, 8, S, S)
+
+        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        # print(scores.shape, dist_score.shape)
 
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
+
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))

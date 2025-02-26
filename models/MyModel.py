@@ -2,20 +2,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import FullAttention, AttentionLayer, ALiBiAttention
+from layers.SelfAttention_Family import (
+    FullAttention,
+    AttentionLayer,
+    GraphAttention,
+    GraphAttentionLayer,
+)
 from layers.Embed import PositionalEmbedding
 import numpy as np
-
-
-class LearnablePE(nn.Module):
-    def __init__(self, max_len, d_model):
-        super().__init__()
-        self.position_embeddings = nn.Embedding(max_len, d_model)
-
-    def forward(self, x):
-        batch_size, seq_len, _ = x.shape
-        pos_ids = torch.arange(seq_len, device=x.device).unsqueeze(0)  # [1, seq_len]
-        return self.position_embeddings(pos_ids)
 
 
 class DataEmbedding_inverted(nn.Module):
@@ -26,7 +20,6 @@ class DataEmbedding_inverted(nn.Module):
 
     def forward(self, x, x_mark):
         x = x.permute(0, 2, 1)
-
         # x: [Batch Variate Time]
         if x_mark is None:
             x = self.value_embedding(x)
@@ -59,8 +52,8 @@ class Model(nn.Module):
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    AttentionLayer(
-                        ALiBiAttention(
+                    GraphAttentionLayer(
+                        GraphAttention(
                             False,
                             configs.factor,
                             attention_dropout=configs.dropout,
