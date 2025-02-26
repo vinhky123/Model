@@ -121,9 +121,6 @@ class Model(nn.Module):
         x_enc /= stdev
 
         B, L, N = x_enc.shape
-        """
-        x_enc = x_enc + self.pe(x_enc)
-        """
 
         # Embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)

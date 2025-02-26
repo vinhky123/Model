@@ -190,7 +190,7 @@ class PatchEmbedding(nn.Module):
         self.value_embedding = nn.Linear(patch_len, d_model, bias=False)
 
         # Positional embedding
-        self.position_embedding = PositionalEmbedding(d_model)
+        # self.position_embedding = PositionalEmbedding(d_model)
 
         # Residual dropout
         self.dropout = nn.Dropout(dropout)
@@ -202,5 +202,6 @@ class PatchEmbedding(nn.Module):
         x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
         x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
         # Input encoding
-        x = self.value_embedding(x) + self.position_embedding(x)
+        x = self.value_embedding(x)
+        # x = self.value_embedding(x) + self.position_embedding(x)
         return self.dropout(x), n_vars
