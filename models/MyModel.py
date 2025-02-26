@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import FullAttention, AttentionLayer
+from layers.SelfAttention_Family import FullAttention, AttentionLayer, ALiBiAttention
 from layers.Embed import PositionalEmbedding
 import numpy as np
 
@@ -21,7 +21,6 @@ class LearnablePE(nn.Module):
 class DataEmbedding_inverted(nn.Module):
     def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
         super(DataEmbedding_inverted, self).__init__()
-        self.learnable_pe = LearnablePE(max_len=5000, d_model=d_model)
         self.value_embedding = nn.Linear(c_in, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
@@ -34,9 +33,7 @@ class DataEmbedding_inverted(nn.Module):
         else:
             x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
         # x: [Batch Variate d_model]
-        x = self.dropout(x)
 
-        x = x + self.learnable_pe(x)
         return self.dropout(x)
 
 
@@ -63,7 +60,7 @@ class Model(nn.Module):
             [
                 EncoderLayer(
                     AttentionLayer(
-                        FullAttention(
+                        ALiBiAttention(
                             False,
                             configs.factor,
                             attention_dropout=configs.dropout,
