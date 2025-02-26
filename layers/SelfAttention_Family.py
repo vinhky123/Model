@@ -426,6 +426,8 @@ class GraphAttention(nn.Module):
         dist_score = dist_score.expand(B, 8, S, S)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+
+        scores = scores + dist_score
         # print(scores.shape, dist_score.shape)
 
         if self.mask_flag:
