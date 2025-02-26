@@ -34,6 +34,7 @@ class DataEmbedding_inverted(nn.Module):
         else:
             x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
         # x: [Batch Variate d_model]
+        x = self.dropout(x)
 
         x = x + self.learnable_pe(x)
         return self.dropout(x)
