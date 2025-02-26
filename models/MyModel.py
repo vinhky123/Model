@@ -3,43 +3,31 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import DataEmbedding_inverted, PositionalEmbedding
+from layers.Embed import PositionalEmbedding
 import numpy as np
 
 
-class FourierFeatureEncoding(nn.Module):
-    def __init__(self, sequence_length, num_frequencies):
-        super(FourierFeatureEncoding, self).__init__()
-        self.sequence_length = sequence_length
-        self.num_frequencies = num_frequencies
-
-        self.B_matrix = nn.Parameter(
-            torch.randn(num_frequencies, sequence_length) * 2 * np.pi,
-            requires_grad=False,
-        )
+class LearnablePE(nn.Module):
+    def __init__(self, max_len, d_model):
+        super().__init__()
+        self.position_embeddings = nn.Embedding(max_len, d_model)
 
     def forward(self, x):
-        B, F, S = x.shape
-
-        x_proj = torch.einsum("bfs,ms->bfm", x, self.B_matrix)
-
-        fourier_features = torch.cat(
-            [torch.sin(x_proj), torch.cos(x_proj)], dim=-1
-        )  # (B, F, M, 2)
-
-        fourier_features = fourier_features.view(B, F, -1)  # (B, F, 2M)
-
-        return fourier_features
+        batch_size, seq_len, _ = x.shape
+        pos_ids = torch.arange(seq_len, device=x.device).unsqueeze(0)  # [1, seq_len]
+        return self.position_embeddings(pos_ids)
 
 
 class DataEmbedding_inverted(nn.Module):
     def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
         super(DataEmbedding_inverted, self).__init__()
+        self.learnable_pe = LearnablePE(max_len=5000, d_model=d_model)
         self.value_embedding = nn.Linear(c_in, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, x_mark):
         x = x.permute(0, 2, 1)
+        x = x + self.learnable_pe(x)
         # x: [Batch Variate Time]
         if x_mark is None:
             x = self.value_embedding(x)
@@ -50,6 +38,9 @@ class DataEmbedding_inverted(nn.Module):
 
 
 class Model(nn.Module):
+    """
+    Paper link: https://arxiv.org/abs/2310.06625
+    """
 
     def __init__(self, configs):
         super(Model, self).__init__()
@@ -64,7 +55,6 @@ class Model(nn.Module):
             configs.freq,
             configs.dropout,
         )
-
         # Encoder
         self.encoder = Encoder(
             [
@@ -88,14 +78,6 @@ class Model(nn.Module):
             ],
             norm_layer=torch.nn.LayerNorm(configs.d_model),
         )
-        self.lstm = nn.LSTM(
-            input_size=configs.pred_len,
-            hidden_size=configs.pred_len * 4,
-            num_layers=1,
-            batch_first=True,
-        )
-
-        self.decoder = nn.Linear(configs.pred_len * 4, configs.pred_len, bias=True)
         # Decoder
         if (
             self.task_name == "long_term_forecast"
@@ -120,18 +102,13 @@ class Model(nn.Module):
         stdev = torch.sqrt(torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_enc /= stdev
 
-        B, L, N = x_enc.shape
+        _, _, N = x_enc.shape
 
         # Embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)
         enc_out, attns = self.encoder(enc_out, attn_mask=None)
 
-        dec_out = self.projection(enc_out)[:, :N, :]
-        dec_out, _ = self.lstm(dec_out)
-
-        dec_out = self.decoder(dec_out)
-        dec_out = dec_out.permute(0, 2, 1)
-
+        dec_out = self.projection(enc_out).permute(0, 2, 1)[:, :, :N]
         # De-Normalization from Non-stationary Transformer
         dec_out = dec_out * (stdev[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))
         dec_out = dec_out + (means[:, 0, :].unsqueeze(1).repeat(1, self.pred_len, 1))

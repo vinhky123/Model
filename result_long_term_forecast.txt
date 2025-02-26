@@ -11,14 +11,11 @@ long_term_forecast_ETTh2_96_720_iTransformer_ETTh2_ftM_sl96_ll48_pl720_dm128_nh8
 mse:0.4274037778377533, mae:0.4452069103717804, dtw:Not calculated
 
 long_term_forecast_ETTh2_96_96_MyModel_ETTh2_ftM_sl96_ll48_pl96_dm128_nh8_el2_dl1_df128_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
-mse:0.2995961904525757, mae:0.3511565327644348, dtw:Not calculated
+mse:0.30023714900016785, mae:0.3519902527332306, dtw:Not calculated
 
 long_term_forecast_ETTh2_96_192_MyModel_ETTh2_ftM_sl96_ll48_pl192_dm128_nh8_el2_dl1_df128_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
-mse:0.3847444951534271, mae:0.402953565120697, dtw:Not calculated
+mse:0.38301458954811096, mae:0.3998779356479645, dtw:Not calculated
 
 long_term_forecast_ETTh2_96_336_MyModel_ETTh2_ftM_sl96_ll48_pl336_dm128_nh8_el2_dl1_df128_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
-mse:0.42646947503089905, mae:0.43622899055480957, dtw:Not calculated
-
-long_term_forecast_ETTh2_96_720_MyModel_ETTh2_ftM_sl96_ll48_pl720_dm128_nh8_el2_dl1_df128_expand2_dc4_fc3_ebtimeF_dtTrue_Exp_0  
-mse:0.44005095958709717, mae:0.44986823201179504, dtw:Not calculated
+mse:0.44306057691574097, mae:0.43658480048179626, dtw:Not calculated
 
