@@ -362,7 +362,12 @@ class TwoStageAttentionLayer(nn.Module):
 
 class ALiBiAttention(nn.Module):
     def __init__(
-        self, mask_flag=True, scale=None, attention_dropout=0.1, output_attention=False
+        self,
+        mask_flag=True,
+        factor=5,
+        scale=None,
+        attention_dropout=0.1,
+        output_attention=False,
     ):
         super(ALiBiAttention, self).__init__()
         self.scale = scale
@@ -370,50 +375,34 @@ class ALiBiAttention(nn.Module):
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
 
-    def create_alibi_bias(self, seq_len, num_heads, device):
+    def create_alibi_bias(self, B, L, H, device):
         """
-        Tạo bias ALiBi cho attention scores.
-
-        Args:
-            seq_len (int): Chiều dài chuỗi đầu vào.
-            num_heads (int): Số lượng attention heads.
-            device (torch.device): Thiết bị tính toán (cuda/cpu).
-
-        Returns:
-            torch.Tensor: Bias ALiBi có kích thước [num_heads, 1, seq_len, seq_len]
+        Tạo bias ALiBi có kích thước [B, H, L, L]
         """
-        slopes = torch.tensor(
-            [2 ** (-8 * (i / num_heads)) for i in range(num_heads)], device=device
-        )
-        distance = torch.arange(seq_len, device=device).view(1, 1, -1) - torch.arange(
-            seq_len, device=device
-        ).view(1, -1, 1)
-        distance = distance.abs().unsqueeze(0)  # [1, seq_len, seq_len]
-        alibi_bias = (
-            -slopes.view(num_heads, 1, 1) * distance
-        )  # [num_heads, 1, seq_len, seq_len]
+        slopes = torch.tensor([2 ** (-8 * (i / H)) for i in range(H)], device=device)
+        distance = torch.arange(L, device=device).view(1, 1, L) - torch.arange(
+            L, device=device
+        ).view(1, L, 1)
+        distance = distance.abs().expand(B, H, L, L)
+        alibi_bias = -slopes.view(1, H, 1, 1) * distance
         return alibi_bias
 
-    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
+    def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        # Tính attention score gốc
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
-        # Thêm ALiBi bias
-        alibi_bias = self.create_alibi_bias(L, H, queries.device)
+        # Áp dụng ALiBi bias
+        alibi_bias = self.create_alibi_bias(B, L, H, queries.device)
         scores += alibi_bias
 
         if self.mask_flag:
             if attn_mask is None:
-                attn_mask = torch.triu(
-                    torch.ones((L, S), device=queries.device), diagonal=1
-                ).bool()
-            scores.masked_fill_(attn_mask.unsqueeze(0).unsqueeze(0), -np.inf)
+                attn_mask = TriangularCausalMask(B, L, device=queries.device)
+            scores.masked_fill_(attn_mask.mask, -np.inf)
 
-        # Softmax và attention
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
