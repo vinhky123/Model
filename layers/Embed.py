@@ -140,17 +140,6 @@ class DataEmbedding(nn.Module):
         return self.dropout(x)
 
 
-class LearnablePE(nn.Module):
-    def __init__(self, max_len, d_model):
-        super().__init__()
-        self.position_embeddings = nn.Embedding(max_len, d_model)
-
-    def forward(self, x):
-        batch_size, seq_len, _ = x.shape
-        pos_ids = torch.arange(seq_len, device=x.device).unsqueeze(0)  # [1, seq_len]
-        return self.position_embeddings(pos_ids)
-
-
 class DataEmbedding_inverted(nn.Module):
     def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
         super(DataEmbedding_inverted, self).__init__()
@@ -201,7 +190,7 @@ class PatchEmbedding(nn.Module):
         self.value_embedding = nn.Linear(patch_len, d_model, bias=False)
 
         # Positional embedding
-        # self.position_embedding = PositionalEmbedding(d_model)
+        self.position_embedding = PositionalEmbedding(d_model)
 
         # Residual dropout
         self.dropout = nn.Dropout(dropout)
@@ -213,6 +202,5 @@ class PatchEmbedding(nn.Module):
         x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
         x = torch.reshape(x, (x.shape[0] * x.shape[1], x.shape[2], x.shape[3]))
         # Input encoding
-        x = self.value_embedding(x)
-        # x = self.value_embedding(x) + self.position_embedding(x)
+        x = self.value_embedding(x) + self.position_embedding(x)
         return self.dropout(x), n_vars
