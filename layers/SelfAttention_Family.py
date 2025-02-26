@@ -419,7 +419,7 @@ class GraphAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        padded_dist = torch.full((330, 330), 0).cuda()
+        padded_dist = torch.full((330, 330), 0).float().cuda()
 
         padded_dist[:325, :325] = self.dist
         dist_score = self.dist_projection(padded_dist).unsqueeze(0).unsqueeze(0)
