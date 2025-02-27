@@ -427,8 +427,7 @@ class GraphAttention(nn.Module):
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
-        scores = scores + dist_score
-        # print(scores.shape, dist_score.shape)
+        # scores = scores + dist_score
 
         if self.mask_flag:
             if attn_mask is None:
