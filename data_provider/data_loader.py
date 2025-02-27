@@ -410,11 +410,6 @@ class Dataset_Custom(Dataset):
         else:
             data = df_data.values
 
-        print(
-            f"Dataset Type: {self.set_type} - {'Train' if self.set_type == 0 else 'Validation' if self.set_type == 1 else 'Test'}"
-        )
-        print(f"Mean: {np.mean(data, axis=0)}, Std: {np.std(data, axis=0)}")
-
         df_stamp = df_raw[["date"]][border1:border2]
         df_stamp["date"] = pd.to_datetime(df_stamp.date)
         if self.timeenc == 0:
