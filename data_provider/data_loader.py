@@ -398,11 +398,22 @@ class Dataset_Custom(Dataset):
             df_data = df_raw[[self.target]]
 
         if self.scale:
-            train_data = df_data[border1s[0] : border2s[0]]
+            train_data = df_data[
+                border1s[0] : border2s[0]
+            ]  # Chỉ dùng tập train để fit scaler
             self.scaler.fit(train_data.values)
-            data = self.scaler.transform(df_data.values)
+
+            if self.set_type == 0:  # Nếu là train thì chuẩn hóa
+                data = self.scaler.transform(df_data.values)
+            else:  # Nếu là validation hoặc test, giữ nguyên dữ liệu
+                data = df_data.values
         else:
             data = df_data.values
+
+        print(
+            f"Dataset Type: {self.set_type} - {'Train' if self.set_type == 0 else 'Validation' if self.set_type == 1 else 'Test'}"
+        )
+        print(f"Mean: {np.mean(data, axis=0)}, Std: {np.std(data, axis=0)}")
 
         df_stamp = df_raw[["date"]][border1:border2]
         df_stamp["date"] = pd.to_datetime(df_stamp.date)
