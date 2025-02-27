@@ -148,7 +148,6 @@ class DataEmbedding_inverted(nn.Module):
 
     def forward(self, x, x_mark):
         x = x.permute(0, 2, 1)
-
         # x: [Batch Variate Time]
         if x_mark is None:
             x = self.value_embedding(x)
