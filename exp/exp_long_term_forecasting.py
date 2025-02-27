@@ -48,8 +48,6 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
 
-                print(batch_x)
-
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
 
