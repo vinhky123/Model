@@ -398,15 +398,11 @@ class Dataset_Custom(Dataset):
             df_data = df_raw[[self.target]]
 
         if self.scale:
-            train_data = df_data[
-                border1s[0] : border2s[0]
-            ]  # Chỉ dùng tập train để fit scaler
-            self.scaler.fit(train_data.values)
-
-            if self.set_type == 0:  # Nếu là train thì chuẩn hóa
-                data = self.scaler.transform(df_data.values)
-            else:  # Nếu là validation hoặc test, giữ nguyên dữ liệu
-                data = df_data.values
+            train_data = df_data[border1s[0]:border2s[0]]  # Use only the training data to fit the scaler
+            self.scaler.fit(train_data.values)  # Fit the scaler on the training data
+        
+            # Transform the entire dataset using the scaler fitted on the training data
+            data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
 
