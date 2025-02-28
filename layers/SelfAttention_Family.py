@@ -407,7 +407,7 @@ class GraphAttention(nn.Module):
         super(GraphAttention, self).__init__()
         self.n_vars = n_vars
 
-        self.dist_projection = nn.Linear(self.n_vars + 5, self.n_vars + 5)
+        self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4)
 
         self.dist = torch.tensor(
             pd.read_csv(distpath, header=None).values, dtype=torch.float32
@@ -423,7 +423,7 @@ class GraphAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        padded_dist = torch.full((self.n_vars + 5, self.n_vars + 5), 0).float().cuda()
+        padded_dist = torch.full((self.n_vars + 4, self.n_vars + 4), 0).float().cuda()
 
         padded_dist[: self.n_vars, : self.n_vars] = self.dist
         dist_score = self.dist_projection(padded_dist).unsqueeze(0).unsqueeze(0)
