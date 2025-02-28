@@ -204,3 +204,47 @@ class PatchEmbedding(nn.Module):
         # Input encoding
         x = self.value_embedding(x) + self.position_embedding(x)
         return self.dropout(x), n_vars
+
+
+class DataEmbedding_attention_inverted(nn.Module):
+    def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
+        super(DataEmbedding_attention_inverted, self).__init__()
+        self.value_embedding = nn.Linear(c_in, d_model)
+        self.dropout = nn.Dropout(p=dropout)
+
+        self.query = nn.Linear(d_model, d_model)
+        self.key = nn.Linear(d_model, d_model)
+        self.value = nn.Linear(d_model, d_model)
+
+        self.n_head = 8
+
+    def forward(self, x, x_mark):
+        x = x.permute(0, 2, 1)
+        # x: [Batch Variate Time]
+        if x_mark is None:
+            x = self.value_embedding(x)
+        else:
+            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
+        # x: [Batch Variate d_model]
+        x = self.dropout(x)
+
+        q = self.query(x)
+        k = self.key(x)
+        v = self.value(x)
+
+        q = q.view(x.size(0), x.size(1), self.n_head, -1).transpose(1, 2)
+        k = k.view(x.size(0), x.size(1), self.n_head, -1).transpose(1, 2)
+        v = v.view(x.size(0), x.size(1), self.n_head, -1).transpose(1, 2)
+
+        res_x = torch.matmul(
+            F.softmax(
+                torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(k.size(-1)), dim=-1
+            ),
+            v,
+        )
+
+        res_x = res_x.transpose(1, 2).contiguous().view(x.size(0), x.size(1), -1)
+
+        x = x + res_x
+
+        return self.dropout(x)

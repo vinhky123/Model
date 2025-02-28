@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
 from layers.SelfAttention_Family import GraphAttention, GraphAttentionLayer
-from layers.Embed import DataEmbedding_inverted
+from layers.Embed import DataEmbedding_inverted, DataEmbedding_attention_inverted
 import numpy as np
 
 
@@ -19,7 +19,7 @@ class Model(nn.Module):
         self.pred_len = configs.pred_len
         self.distpath = configs.distpath
         # Embedding
-        self.enc_embedding = DataEmbedding_inverted(
+        self.enc_embedding = DataEmbedding_attention_inverted(
             configs.seq_len,
             configs.d_model,
             configs.embed,
