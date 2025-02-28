@@ -19,7 +19,7 @@ class Model(nn.Module):
         self.pred_len = configs.pred_len
         self.distpath = configs.distpath
         # Embedding
-        self.enc_embedding = DataEmbedding_attention_inverted(
+        self.enc_embedding = DataEmbedding_inverted(
             configs.seq_len,
             configs.d_model,
             configs.embed,
