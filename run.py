@@ -43,6 +43,10 @@ if __name__ == "__main__":
 
     # data loader
     parser.add_argument(
+        "--distpath", type=str, required=False, default="", help="distance dataset path"
+    )
+
+    parser.add_argument(
         "--data", type=str, required=True, default="ETTh1", help="dataset type"
     )
     parser.add_argument(

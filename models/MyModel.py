@@ -2,32 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from layers.Transformer_EncDec import Encoder, EncoderLayer
-from layers.SelfAttention_Family import (
-    FullAttention,
-    AttentionLayer,
-    GraphAttention,
-    GraphAttentionLayer,
-)
-from layers.Embed import PositionalEmbedding
+from layers.SelfAttention_Family import GraphAttention, GraphAttentionLayer
+from layers.Embed import DataEmbedding_inverted
 import numpy as np
-
-
-class DataEmbedding_inverted(nn.Module):
-    def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
-        super(DataEmbedding_inverted, self).__init__()
-        self.value_embedding = nn.Linear(c_in, d_model)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, x, x_mark):
-        x = x.permute(0, 2, 1)
-        # x: [Batch Variate Time]
-        if x_mark is None:
-            x = self.value_embedding(x)
-        else:
-            x = self.value_embedding(torch.cat([x, x_mark.permute(0, 2, 1)], 1))
-        # x: [Batch Variate d_model]
-
-        return self.dropout(x)
 
 
 class Model(nn.Module):
@@ -40,6 +17,7 @@ class Model(nn.Module):
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
+        self.distpath = configs.distpath
         # Embedding
         self.enc_embedding = DataEmbedding_inverted(
             configs.seq_len,
@@ -58,6 +36,8 @@ class Model(nn.Module):
                             configs.factor,
                             attention_dropout=configs.dropout,
                             output_attention=False,
+                            distpath=self.distpath,
+                            n_vars=configs.enc_in,
                         ),
                         configs.d_model,
                         configs.n_heads,

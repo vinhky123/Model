@@ -5,6 +5,7 @@ from math import sqrt
 from utils.masking import TriangularCausalMask, ProbMask
 from reformer_pytorch import LSHSelfAttention
 from einops import rearrange, repeat
+import pandas as pd
 
 
 class DSAttention(nn.Module):
@@ -400,14 +401,17 @@ class GraphAttention(nn.Module):
         scale=None,
         attention_dropout=0.1,
         output_attention=False,
+        distpath="",
+        n_vars=330,
     ):
         super(GraphAttention, self).__init__()
+        self.n_vars = n_vars
 
-        self.dist_projection = nn.Linear(330, 330)
+        self.dist_projection = nn.Linear(self.n_vars + 5, self.n_vars + 5)
 
-        self.dist = (
-            torch.from_numpy(np.load("./dataset/PEMS/PEMS_BAY/dist.npy")).float().cuda()
-        )
+        self.dist = torch.tensor(
+            pd.read_csv(distpath, header=None), dtype=torch.float32
+        ).cuda()
 
         self.scale = scale
         self.mask_flag = mask_flag
@@ -419,15 +423,15 @@ class GraphAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        padded_dist = torch.full((330, 330), 0).float().cuda()
+        padded_dist = torch.full((self.n_vars + 5, self.n_vars + 5), 0).float().cuda()
 
-        padded_dist[:325, :325] = self.dist
+        padded_dist[: self.n_vars, : self.n_vars] = self.dist
         dist_score = self.dist_projection(padded_dist).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.expand(B, 8, S, S)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
-        # scores = scores + dist_score
+        scores = scores + dist_score
 
         if self.mask_flag:
             if attn_mask is None:
