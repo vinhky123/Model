@@ -411,7 +411,7 @@ class GraphAttention(nn.Module):
         self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4)
 
         if use_lrpe:
-            self.lrpe = nn.Parameter(torch.randn(self.n_vars, self.n_vars))
+            self.lrpe = nn.Parameter(torch.randn(self.n_vars, self.n_vars)).cuda()
             self.dist = torch.exp(-self.lrpe**2)
         else:
             self.dist = torch.tensor(
