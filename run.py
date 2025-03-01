@@ -337,6 +337,14 @@ if __name__ == "__main__":
     # TimeXer
     parser.add_argument("--patch_len", type=int, default=16, help="patch length")
 
+    # Enhance more
+    parser.add_argument(
+        "--use_LRPE",
+        type=bool,
+        default=False,
+        help="is the model use Learnable Relative Positional Encoding",
+    )
+
     args = parser.parse_args()
     if torch.cuda.is_available() and args.use_gpu:
         args.device = torch.device("cuda:{}".format(args.gpu))

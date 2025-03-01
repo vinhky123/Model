@@ -32,6 +32,7 @@ class Model(nn.Module):
                 EncoderLayer(
                     GraphAttentionLayer(
                         GraphAttention(
+                            configs.use_LRPE,
                             False,
                             configs.factor,
                             attention_dropout=configs.dropout,

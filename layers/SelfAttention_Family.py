@@ -396,6 +396,7 @@ class GraphAttentionLayer(nn.Module):
 class GraphAttention(nn.Module):
     def __init__(
         self,
+        use_lrpe=False,
         mask_flag=True,
         factor=5,
         scale=None,
@@ -409,9 +410,12 @@ class GraphAttention(nn.Module):
 
         self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4)
 
-        self.dist = torch.tensor(
-            pd.read_csv(distpath, header=None).values, dtype=torch.float32
-        ).cuda()
+        if use_lrpe:
+            self.dist = nn.Parameter(torch.randn(self.n_vars, self.n_vars))
+        else:
+            self.dist = torch.tensor(
+                pd.read_csv(distpath, header=None).values, dtype=torch.float32
+            ).cuda()
 
         self.scale = scale
         self.mask_flag = mask_flag
