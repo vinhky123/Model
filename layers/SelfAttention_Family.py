@@ -412,6 +412,7 @@ class GraphAttention(nn.Module):
 
         if use_lrpe:
             self.dist = nn.Parameter(torch.randn(self.n_vars, self.n_vars))
+            self.dist = torch.exp(-self.dist**2)
         else:
             self.dist = torch.tensor(
                 pd.read_csv(distpath, header=None).values, dtype=torch.float32
