@@ -401,14 +401,17 @@ class GraphAttention(nn.Module):
         scale=None,
         attention_dropout=0.1,
         output_attention=False,
+        distpath="",
         n_vars=330,
     ):
         super(GraphAttention, self).__init__()
         self.n_vars = n_vars
 
-        self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4).cuda()
+        self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4)
 
-        self.dist = nn.Parameter(torch.ones(self.n_vars + 4, self.n_vars + 4)).cuda()
+        self.dist = torch.tensor(
+            pd.read_csv(distpath, header=None).values, dtype=torch.float32
+        ).cuda()
 
         self.scale = scale
         self.mask_flag = mask_flag
@@ -420,12 +423,15 @@ class GraphAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        dist_scores = torch.exp(-self.dist**2)
+        padded_dist = torch.full((self.n_vars + 4, self.n_vars + 4), 0).float().cuda()
 
-        dist_score = self.dist_projection(dist_scores).unsqueeze(0).unsqueeze(0)
+        padded_dist[: self.n_vars, : self.n_vars] = self.dist
+        dist_score = self.dist_projection(padded_dist).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.expand(B, 8, S, S)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+
+        scores = scores + dist_score
 
         if self.mask_flag:
             if attn_mask is None:
@@ -434,9 +440,6 @@ class GraphAttention(nn.Module):
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
-
-        A = A + dist_score
-
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
         if self.output_attention:
