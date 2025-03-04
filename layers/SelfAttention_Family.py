@@ -409,7 +409,6 @@ class GraphAttention(nn.Module):
         self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4).cuda()
 
         self.dist = nn.Parameter(torch.ones(self.n_vars + 4, self.n_vars + 4)).cuda()
-        self.scores = torch.exp(-self.dist**2).cuda()
 
         self.scale = scale
         self.mask_flag = mask_flag
@@ -421,7 +420,9 @@ class GraphAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        dist_score = self.dist_projection(self.scores).unsqueeze(0).unsqueeze(0)
+        dist_scores = torch.exp(-self.dist**2)
+
+        dist_score = self.dist_projection(dist_scores).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.expand(B, 8, S, S)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
