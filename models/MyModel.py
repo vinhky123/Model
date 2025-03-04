@@ -36,7 +36,6 @@ class Model(nn.Module):
                             configs.factor,
                             attention_dropout=configs.dropout,
                             output_attention=False,
-                            distpath=self.distpath,
                             n_vars=configs.enc_in,
                         ),
                         configs.d_model,

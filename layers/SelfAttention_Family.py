@@ -401,7 +401,6 @@ class GraphAttention(nn.Module):
         scale=None,
         attention_dropout=0.1,
         output_attention=False,
-        distpath="",
         n_vars=330,
     ):
         super(GraphAttention, self).__init__()
@@ -409,7 +408,8 @@ class GraphAttention(nn.Module):
 
         self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4)
 
-        self.dist = nn.Parameter(torch.randn(self.n_vars + 4, self.n_vars + 4))
+        self.dist = nn.Parameter(torch.ones(self.n_vars + 4, self.n_vars + 4))
+        self.scores = torch.exp(-self.dist**2)
 
         self.scale = scale
         self.mask_flag = mask_flag
@@ -421,7 +421,7 @@ class GraphAttention(nn.Module):
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
 
-        dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
+        dist_score = self.dist_projection(self.scores).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.expand(B, 8, S, S)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
