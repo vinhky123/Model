@@ -406,10 +406,10 @@ class GraphAttention(nn.Module):
         super(GraphAttention, self).__init__()
         self.n_vars = n_vars
 
-        self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4)
+        self.dist_projection = nn.Linear(self.n_vars + 4, self.n_vars + 4).cuda()
 
-        self.dist = nn.Parameter(torch.ones(self.n_vars + 4, self.n_vars + 4))
-        self.scores = torch.exp(-self.dist**2)
+        self.dist = nn.Parameter(torch.ones(self.n_vars + 4, self.n_vars + 4)).cuda()
+        self.scores = torch.exp(-self.dist**2).cuda()
 
         self.scale = scale
         self.mask_flag = mask_flag
