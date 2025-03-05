@@ -407,7 +407,7 @@ class GraphAttention(nn.Module):
         super(GraphAttention, self).__init__()
         self.n_vars = n_vars
 
-        self.dist_projection = nn.Linear(self.n_vars, self.n_vars)
+        self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
 
         self.dist = torch.tensor(
             pd.read_csv(distpath, header=None).values, dtype=torch.float32
@@ -424,7 +424,7 @@ class GraphAttention(nn.Module):
         scale = self.scale or 1.0 / sqrt(E)
 
         dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
-        dist_score = dist_score.repeat(B, L, 1, 1)
+        dist_score = dist_score.repeat(B, 8, 1, 1)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
         print(scores.shape)
