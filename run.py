@@ -88,7 +88,7 @@ if __name__ == "__main__":
         "--seasonal_patterns", type=str, default="Monthly", help="subset for M4"
     )
     parser.add_argument(
-        "--inverse", action="store_true", help="inverse output data", default=True
+        "--inverse", action="store_true", help="inverse output data", default=False
     )
 
     # inputation task
