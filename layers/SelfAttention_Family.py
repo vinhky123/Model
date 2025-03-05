@@ -424,7 +424,7 @@ class GraphAttention(nn.Module):
         scale = self.scale or 1.0 / sqrt(E)
 
         dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
-        dist_score = dist_score.expand(B, 8, S, S)
+        dist_score = dist_score.repeat(B, L, 1, 1)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
