@@ -427,8 +427,6 @@ class GraphAttention(nn.Module):
         dist_score = dist_score.repeat(B, 8, 1, 1)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
-        print(scores.shape)
-        print(dist_score.shape)
 
         scores = scores + dist_score
 
