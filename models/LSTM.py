@@ -5,9 +5,9 @@ from layers.Embed import DataEmbedding
 import numpy as np
 
 
-class LSTMModel(nn.Module):
+class Model(nn.Module):
     def __init__(self, configs):
-        super(LSTMModel, self).__init__()
+        super(Model, self).__init__()
         self.task_name = configs.task_name
         self.pred_len = configs.pred_len
         self.seq_len = configs.seq_len
