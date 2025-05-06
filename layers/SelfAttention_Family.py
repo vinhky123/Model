@@ -361,9 +361,9 @@ class TwoStageAttentionLayer(nn.Module):
         return final_out
 
 
-class GraphAttentionLayer(nn.Module):
+class RPEAttentionLayer(nn.Module):
     def __init__(self, attention, d_model, n_heads, d_keys=None, d_values=None):
-        super(GraphAttentionLayer, self).__init__()
+        super(RPEAttentionLayer, self).__init__()
 
         d_keys = d_keys or (d_model // n_heads)
         d_values = d_values or (d_model // n_heads)
@@ -393,7 +393,7 @@ class GraphAttentionLayer(nn.Module):
         return self.out_projection(out), attn
 
 
-class GraphAttention(nn.Module):
+class RPEAttention(nn.Module):
     def __init__(
         self,
         mask_flag=True,
@@ -404,7 +404,7 @@ class GraphAttention(nn.Module):
         distpath="",
         n_vars=330,
     ):
-        super(GraphAttention, self).__init__()
+        super(RPEAttention, self).__init__()
         self.n_vars = n_vars
 
         self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)

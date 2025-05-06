@@ -4,8 +4,8 @@ import torch.nn.functional as F
 from layers.SelfAttention_Family import (
     FullAttention,
     AttentionLayer,
-    GraphAttention,
-    GraphAttentionLayer,
+    RPEAttention,
+    RPEAttentionLayer,
 )
 from layers.Embed import DataEmbedding_inverted, PositionalEmbedding
 import numpy as np
@@ -163,8 +163,8 @@ class Model(nn.Module):
                         configs.d_model,
                         configs.n_heads,
                     ),
-                    GraphAttentionLayer(
-                        GraphAttention(
+                    RPEAttentionLayer(
+                        RPEAttention(
                             False,
                             configs.factor,
                             attention_dropout=configs.dropout,
