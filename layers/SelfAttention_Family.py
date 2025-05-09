@@ -404,6 +404,7 @@ class RPEAttention(nn.Module):
         output_attention=False,
         n_vars=330,
         mlp_hidden_dim=64,
+        distpath=""
     ):
         super(RPEAttention, self).__init__()
         self.n_vars = n_vars
