@@ -441,6 +441,8 @@ class RPEAttention(nn.Module):
 
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
+        print(dist_score_v.shape)
+        print(values.shape)
         values = values + dist_score_v
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
