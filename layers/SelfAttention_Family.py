@@ -428,9 +428,6 @@ class RPEAttention(nn.Module):
         dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.repeat(B, 8, 1, 1)
 
-        dist_score_v = self.dist_projection_v(self.dist).unsqueeze(0).unsqueeze(0)
-        dist_score_v = dist_score_v.repeat(B, 8, 1, 1)
-
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
         scores = scores + dist_score
@@ -440,10 +437,6 @@ class RPEAttention(nn.Module):
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
 
             scores.masked_fill_(attn_mask.mask, -np.inf)
-
-        print(dist_score_v.shape)
-        print(values.shape)
-        values = values + dist_score_v
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
         V = torch.einsum("bhls,bshd->blhd", A, values)
