@@ -413,6 +413,8 @@ class RPEAttention(nn.Module):
             pd.read_csv(distpath).values, dtype=torch.float32
         ).cuda()
 
+        self.dist_projection_v = nn.Linear(self.n_vars, self.n_vars + 4)
+
         self.scale = scale
         self.mask_flag = mask_flag
         self.output_attention = output_attention
@@ -422,12 +424,12 @@ class RPEAttention(nn.Module):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
-        print(self.dist.shape)
+
         dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
-        print(dist_score.shape)
         dist_score = dist_score.repeat(B, 8, 1, 1)
 
-        print(dist_score.shape)
+        dist_score_v = self.dist_projection_v(self.dist).unsqueeze(0).unsqueeze(0)
+        dist_score_v = dist_score_v.repeat(B, 8, 1, 1)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
@@ -438,6 +440,8 @@ class RPEAttention(nn.Module):
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
 
             scores.masked_fill_(attn_mask.mask, -np.inf)
+
+        values = values + dist_score_v
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
         V = torch.einsum("bhls,bshd->blhd", A, values)
