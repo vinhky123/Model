@@ -410,7 +410,7 @@ class RPEAttention(nn.Module):
         self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
 
         self.dist = torch.tensor(
-            pd.read_csv(distpath).values, dtype=torch.float32
+            pd.read_csv(distpath, header=None).values, dtype=torch.float32
         ).cuda()
 
         self.dist_projection_v = nn.Linear(self.n_vars, self.n_vars + 4)
