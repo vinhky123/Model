@@ -6,7 +6,7 @@ from utils.masking import TriangularCausalMask, ProbMask
 from reformer_pytorch import LSHSelfAttention
 from einops import rearrange, repeat
 import pandas as pd
-
+import math
 
 class DSAttention(nn.Module):
     """De-stationary Attention"""
