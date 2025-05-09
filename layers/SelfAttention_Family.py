@@ -407,9 +407,7 @@ class RPEAttention(nn.Module):
         super(RPEAttention, self).__init__()
         self.n_vars = n_vars
 
-        # Linear layer for key projection
         self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
-        self.dist_projection_v = nn.Linear(self.n_vars, self.n_vars + 4)
 
         self.dist = torch.tensor(
             pd.read_csv(distpath).values, dtype=torch.float32
@@ -428,23 +426,17 @@ class RPEAttention(nn.Module):
         dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
         dist_score = dist_score.repeat(B, 8, 1, 1)
 
-        dist_score_v = self.dist_projection_v(self.dist).unsqueeze(0).unsqueeze(0)
-        dist_score_v = dist_score_v.repeat(B, 8, 1, 1)
-
-        # Add positional information to keys before computing attention scores
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+
         scores = scores + dist_score
 
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
+
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
-
-        values = values + dist_score_v
-
-        # Add positional information to values before final multiplication
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
         if self.output_attention:
