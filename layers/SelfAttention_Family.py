@@ -434,12 +434,9 @@ class RPEAttention(nn.Module):
         dist_score_v = self.dist_projection_v(self.dist).unsqueeze(0).unsqueeze(0)
         dist_score_v = dist_score_v.repeat(B, H, 1, 1)
 
-        print(dist_score_k.shape)
-        print(keys.shape)
-
         # Add positional information to keys before computing attention scores
-        keys = keys + dist_score_k
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
+        scores = scores + dist_score_k
 
         if self.mask_flag:
             if attn_mask is None:
