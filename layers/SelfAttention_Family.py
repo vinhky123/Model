@@ -422,9 +422,12 @@ class RPEAttention(nn.Module):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / sqrt(E)
-
+        print(self.dist.shape)
         dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
+        print(dist_score.shape)
         dist_score = dist_score.repeat(B, 8, 1, 1)
+
+        print(dist_score.shape)
 
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
