@@ -8,6 +8,7 @@ from einops import rearrange, repeat
 import pandas as pd
 import math
 
+
 class DSAttention(nn.Module):
     """De-stationary Attention"""
 
@@ -393,7 +394,6 @@ class RPEAttentionLayer(nn.Module):
         return self.out_projection(out), attn
 
 
-
 class RPEAttention(nn.Module):
     def __init__(
         self,
@@ -403,8 +403,7 @@ class RPEAttention(nn.Module):
         attention_dropout=0.1,
         output_attention=False,
         n_vars=330,
-        mlp_hidden_dim=64,
-        distpath=""
+        distpath="",
     ):
         super(RPEAttention, self).__init__()
         self.n_vars = n_vars
@@ -412,51 +411,32 @@ class RPEAttention(nn.Module):
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
-        
-        # MLP to predict relative distance from query-key pairs
-        self.dist_mlp = nn.Sequential(
-            nn.Linear(2 * n_vars, mlp_hidden_dim),
-            nn.ReLU(),
-            nn.Linear(mlp_hidden_dim, 1),
-            nn.Sigmoid()  # Normalize distance to [0, 1]
-        )
+
+        self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
+
+        self.dist = torch.tensor(
+            pd.read_csv(distpath, header=None).values, dtype=torch.float32
+        ).cuda()
 
     def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
-        scale = self.scale or 1.0 / math.sqrt(E)
+        scale = self.scale or 1.0 / sqrt(E)
 
-        # Compute standard attention scores
+        dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
+        dist_score = dist_score.repeat(B, 8, 1, 1)
+
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
-
-        # Compute learned relative distances
-        # Expand queries and keys to form pairs
-        queries_exp = queries.unsqueeze(3).expand(-1, -1, -1, S, -1)  # [B, L, H, S, E]
-        keys_exp = keys.unsqueeze(2).expand(-1, -1, L, -1, -1)       # [B, S, L, H, E]
-        keys_exp = keys_exp.permute(0, 2, 3, 1, 4)                   # [B, L, H, S, E]
-        
-        # Concatenate query-key pairs
-        qk_pairs = torch.cat((queries_exp, keys_exp), dim=-1)        # [B, L, H, S, 2*E]
-        qk_pairs = qk_pairs.view(B * H * L, S, 2 * E)                # [B*H*L, S, 2*E]
-        
-        # Predict relative distance
-        dist_score = self.dist_mlp(qk_pairs).view(B, H, L, S)        # [B, H, L, S]
-        
-        # Scale and shift distance for impact
-        dist_score = dist_score * 10.0 - 5.0  # Adjust range for attention scores
-
-        # Add learned distance to attention scores
         scores = scores + dist_score
 
-        # Apply mask if needed
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
-            scores.masked_fill_(attn_mask.mask, -float('inf'))
+            scores.masked_fill_(attn_mask.mask, -np.inf)
 
         # Softmax to get attention weights
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
-        
+
         # Compute output
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
