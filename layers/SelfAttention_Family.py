@@ -429,7 +429,7 @@ class RPEAttention(nn.Module):
         #     pd.read_csv(distpath, header=None).values, dtype=torch.float32
         # ).cuda()
 
-    def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
+    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / math.sqrt(E)
