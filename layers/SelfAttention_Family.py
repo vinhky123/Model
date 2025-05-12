@@ -405,8 +405,8 @@ class RPEAttention(nn.Module):
         attention_dropout=0.1,
         output_attention=False,
         # Old parameters for distance matrix (commented for rollback)
-        # n_vars=330,
-        # distpath="",
+        n_vars=330,
+        distpath="",
     ):
         super(RPEAttention, self).__init__()
         self.max_relative_pos = max_relative_pos
