@@ -17,7 +17,7 @@ def convert_to_daily(input_path, output_path):
 
     # Chuyển timestamp sang datetime
     if "Timestamp" in df.columns:
-        df["Date"] = pd.to_datetime(df["timestamp"], unit="s")
+        df["Date"] = pd.to_datetime(df["Timestamp"], unit="s")
     elif "time" in df.columns:
         df["Date"] = pd.to_datetime(df["time"], unit="s")
     else:
