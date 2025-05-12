@@ -397,12 +397,12 @@ class RPEAttentionLayer(nn.Module):
 class RPEAttention(nn.Module):
     def __init__(
         self,
-        max_relative_pos=128,  # Maximum relative position to consider
-        rpe_embedding_dim=64,  # Dimension of relative position embeddings
         mask_flag=True,
         scale=None,
         attention_dropout=0.1,
         output_attention=False,
+        max_relative_pos=128,  # Maximum relative position to consider
+        rpe_embedding_dim=64,  # Dimension of relative position embeddings
         # Old parameters for distance matrix (commented for rollback)
         n_vars=330,
         distpath="",
