@@ -3,12 +3,13 @@ import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
 from data_provider.btc_dataset import BTCDataset
-from models.TimesNet import TimesNet
+from models.TimesNet import Model
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import time
 import warnings
 import matplotlib.pyplot as plt
+import os
 
 warnings.filterwarnings("ignore")
 
