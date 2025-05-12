@@ -404,7 +404,7 @@ class RPEAttention(nn.Module):
         attention_dropout=0.1,
         output_attention=False,
         # Old parameters for distance matrix (commented for rollback)
-        # n_vars=330,
+        n_vars=330,
         distpath="",
     ):
         super(RPEAttention, self).__init__()
