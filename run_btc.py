@@ -101,6 +101,10 @@ if __name__ == "__main__":
         default=False,
     )
 
+    parser.add_argument(
+        "--des", type=str, default="test", help="Description of the experiment"
+    )
+
     # GPU
     parser.add_argument("--use_gpu", type=bool, default=True, help="use gpu")
     parser.add_argument("--gpu", type=int, default=0, help="gpu")
