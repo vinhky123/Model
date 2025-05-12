@@ -398,14 +398,15 @@ class RPEAttention(nn.Module):
     def __init__(
         self,
         mask_flag=True,
+        factor=5,
         scale=None,
         attention_dropout=0.1,
         output_attention=False,
+        n_vars=330,
+        distpath="",
         max_relative_pos=128,  # Maximum relative position to consider
         rpe_embedding_dim=64,  # Dimension of relative position embeddings
         # Old parameters for distance matrix (commented for rollback)
-        n_vars=330,
-        distpath="",
     ):
         super(RPEAttention, self).__init__()
         self.max_relative_pos = max_relative_pos
