@@ -397,38 +397,81 @@ class RPEAttentionLayer(nn.Module):
 class RPEAttention(nn.Module):
     def __init__(
         self,
+        max_relative_pos=128,  # Maximum relative position to consider
+        rpe_embedding_dim=64,  # Dimension of relative position embeddings
         mask_flag=True,
-        factor=5,
         scale=None,
         attention_dropout=0.1,
         output_attention=False,
-        n_vars=330,
+        # Old parameters for distance matrix (commented for rollback)
+        # n_vars=330,
         distpath="",
     ):
         super(RPEAttention, self).__init__()
-        self.n_vars = n_vars
+        self.max_relative_pos = max_relative_pos
+        self.rpe_embedding_dim = rpe_embedding_dim
         self.scale = scale
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
 
-        self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
+        # New: Learnable RPE embeddings
+        self.rpe_embedding = nn.Embedding(
+            2 * max_relative_pos + 1,  # For relative positions from -max to +max
+            rpe_embedding_dim,
+        )
+        self.rpe_projection = nn.Linear(rpe_embedding_dim, rpe_embedding_dim)
 
-        self.dist = torch.tensor(
-            pd.read_csv(distpath, header=None).values, dtype=torch.float32
-        ).cuda()
+        # Old: Distance matrix initialization (commented for rollback)
+        # self.n_vars = n_vars
+        # self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
+        # self.dist = torch.tensor(
+        #     pd.read_csv(distpath, header=None).values, dtype=torch.float32
+        # ).cuda()
 
     def forward(self, queries, keys, values, attn_mask, tau=None, delta=None):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
-        scale = self.scale or 1.0 / sqrt(E)
+        scale = self.scale or 1.0 / math.sqrt(E)
 
-        dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
-        dist_score = dist_score.repeat(B, 8, 1, 1)
-
+        # Compute content-based attention scores
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
-        scores = scores + dist_score
 
+        # New: Compute relative position indices and RPE embeddings
+        device = queries.device
+        range_vec = torch.arange(L, device=device)
+        range_mat = range_vec.unsqueeze(1) - range_vec.unsqueeze(0)  # Shape: (L, L)
+        relative_pos = range_mat.clamp(
+            -self.max_relative_pos, self.max_relative_pos
+        )  # Clip to max_relative_pos
+        relative_pos = (
+            relative_pos + self.max_relative_pos
+        )  # Shift to non-negative for embedding
+
+        # Get RPE embeddings
+        rpe_emb = self.rpe_embedding(
+            relative_pos.to(device)
+        )  # Shape: (L, L, rpe_embedding_dim)
+        rpe_emb = self.rpe_projection(rpe_emb)  # Shape: (L, L, rpe_embedding_dim)
+
+        # Project RPE to match head dimension and repeat for batch and heads
+        rpe_scores = rpe_emb.unsqueeze(0).unsqueeze(
+            0
+        )  # Shape: (1, 1, L, L, rpe_embedding_dim)
+        rpe_scores = rpe_scores.sum(
+            dim=-1
+        )  # Sum over embedding dim to get scalar scores
+        rpe_scores = rpe_scores.repeat(B, H, 1, 1)  # Shape: (B, H, L, L)
+
+        # Add RPE scores to content scores
+        scores = scores + rpe_scores
+
+        # Old: Distance score computation (commented for rollback)
+        # dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
+        # dist_score = dist_score.repeat(B, 8, 1, 1)
+        # scores = scores + dist_score
+
+        # Apply mask if needed
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
