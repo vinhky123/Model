@@ -439,8 +439,13 @@ class RPEAttention(nn.Module):
 
         # New: Compute relative position indices and RPE embeddings
         device = queries.device
-        range_vec = torch.arange(L, device=device)
-        range_mat = range_vec.unsqueeze(1) - range_vec.unsqueeze(0)  # Shape: (L, L)
+        range_vec_rows = torch.arange(L, device=device)  # [0, 1, ..., L-1]
+        range_vec_cols = torch.arange(L + 4, device=device)  # [0, 1, ..., L+3]
+
+        # Tạo ma trận L x (L+4)
+        range_mat = range_vec_rows.unsqueeze(1) - range_vec_cols.unsqueeze(
+            0
+        )  # Shape: (L, L)
         relative_pos = range_mat.clamp(
             -self.max_relative_pos, self.max_relative_pos
         )  # Clip to max_relative_pos
