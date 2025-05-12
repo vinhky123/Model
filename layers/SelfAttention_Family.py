@@ -399,7 +399,6 @@ class RPEAttention(nn.Module):
         self,
         max_relative_pos=128,  # Maximum relative position to consider
         rpe_embedding_dim=64,  # Dimension of relative position embeddings
-        extra_positions=4,  # Number of extra positions in keys (S - L)
         mask_flag=True,
         scale=None,
         attention_dropout=0.1,
@@ -411,7 +410,6 @@ class RPEAttention(nn.Module):
         super(RPEAttention, self).__init__()
         self.max_relative_pos = max_relative_pos
         self.rpe_embedding_dim = rpe_embedding_dim
-        self.extra_positions = extra_positions
         self.scale = scale
         self.mask_flag = mask_flag
         self.output_attention = output_attention
@@ -423,11 +421,6 @@ class RPEAttention(nn.Module):
             rpe_embedding_dim,
         )
         self.rpe_projection = nn.Linear(rpe_embedding_dim, rpe_embedding_dim)
-
-        # New: Learnable parameter for extra positions
-        self.extra_rpe = nn.Parameter(
-            torch.randn(1, 1, 1, extra_positions)
-        )  # Shape: (1, 1, 1, 4)
 
         # Old: Distance matrix initialization (commented for rollback)
         # self.n_vars = n_vars
@@ -446,11 +439,8 @@ class RPEAttention(nn.Module):
 
         # New: Compute relative position indices and RPE embeddings
         device = queries.device
-        range_vec_q = torch.arange(L, device=device)
-        range_vec_k = torch.arange(S - self.extra_positions, device=device)
-        range_mat = range_vec_q.unsqueeze(1) - range_vec_k.unsqueeze(
-            0
-        )  # Shape: (L, S - extra_positions)
+        range_vec = torch.arange(L, device=device)
+        range_mat = range_vec.unsqueeze(1) - range_vec.unsqueeze(0)  # Shape: (L, L)
         relative_pos = range_mat.clamp(
             -self.max_relative_pos, self.max_relative_pos
         )  # Clip to max_relative_pos
@@ -461,27 +451,20 @@ class RPEAttention(nn.Module):
         # Get RPE embeddings
         rpe_emb = self.rpe_embedding(
             relative_pos.to(device)
-        )  # Shape: (L, S - extra_positions, rpe_embedding_dim)
-        rpe_emb = self.rpe_projection(
-            rpe_emb
-        )  # Shape: (L, S - extra_positions, rpe_embedding_dim)
+        )  # Shape: (L, L, rpe_embedding_dim)
+        rpe_emb = self.rpe_projection(rpe_emb)  # Shape: (L, L, rpe_embedding_dim)
 
-        # Project RPE to scalar scores
-        rpe_scores = rpe_emb.sum(dim=-1)  # Shape: (L, S - extra_positions)
-        rpe_scores = rpe_scores.unsqueeze(0).unsqueeze(
+        # Project RPE to match head dimension and repeat for batch and heads
+        rpe_scores = rpe_emb.unsqueeze(0).unsqueeze(
             0
-        )  # Shape: (1, 1, L, S - extra_positions)
-        rpe_scores = rpe_scores.repeat(
-            B, H, 1, 1
-        )  # Shape: (B, H, L, S - extra_positions)
+        )  # Shape: (1, 1, L, L, rpe_embedding_dim)
+        rpe_scores = rpe_scores.sum(
+            dim=-1
+        )  # Sum over embedding dim to get scalar scores
+        rpe_scores = rpe_scores.repeat(B, H, 1, 1)  # Shape: (B, H, L, L)
 
-        # New: Add learnable extra positions
-        extra_scores = self.extra_rpe.repeat(
-            B, H, L, 1
-        )  # Shape: (B, H, L, extra_positions)
-        rpe_scores = torch.cat(
-            [rpe_scores, extra_scores], dim=-1
-        )  # Shape: (B, H, L, S)
+        print(scores.shape)
+        print(rpe_scores.shape)
 
         # Add RPE scores to content scores
         scores = scores + rpe_scores
