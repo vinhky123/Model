@@ -471,6 +471,9 @@ class RPEAttention(nn.Module):
         rpe_scores = rpe_scores.unsqueeze(0).unsqueeze(
             0
         )  # Shape: (1, 1, L, S - extra_positions)
+        rpe_scores = rpe_scores.repeat(
+            B, H, 1, 1
+        )  # Shape: (B, H, L, S - extra_positions)
 
         # New: Add learnable extra positions
         extra_scores = self.extra_rpe.repeat(
