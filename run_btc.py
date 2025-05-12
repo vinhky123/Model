@@ -111,6 +111,8 @@ if __name__ == "__main__":
         "--devices", type=str, default="0,1,2,3", help="device ids of multile gpus"
     )
 
+    parser.add_argument("--itr", type=int, default=1, help="iter")
+
     args = parser.parse_args()
 
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
