@@ -31,7 +31,7 @@ class Exp_BTC_Classification(object):
         return device
 
     def _build_model(self):
-        model = TimesNet(
+        model = Model(
             seq_len=self.args.seq_len,
             pred_len=self.args.pred_len,
             enc_in=self.args.enc_in,
