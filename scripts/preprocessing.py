@@ -48,6 +48,24 @@ def add_technical_indicators(df):
     # Rate of Change (ROC)
     df["ROC"] = ((df["Close"] - df["Close"].shift(10)) / df["Close"].shift(10)) * 100
 
+    # Đưa tất cả NaN về 0 cho các chỉ báo kỹ thuật
+    indicator_cols = [
+        "RSI",
+        "MACD",
+        "Signal_Line",
+        "MACD_Histogram",
+        "SMA_20",
+        "BB_Upper",
+        "BB_Lower",
+        "ATR",
+        "VWAP",
+        "Momentum",
+        "ROC",
+    ]
+    for col in indicator_cols:
+        if col in df.columns:
+            df[col].fillna(0, inplace=True)
+
     return df
 
 
