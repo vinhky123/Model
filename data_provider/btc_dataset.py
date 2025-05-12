@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset
 import torch
+from datetime import datetime
 
 
 class BTCDataset(Dataset):
@@ -34,7 +35,15 @@ class BTCDataset(Dataset):
 
         # Đọc và xử lý dữ liệu
         df = pd.read_csv(data_path)
-        df["Date"] = pd.to_datetime(df["Date"])
+
+        # Chuyển timestamp sang datetime
+        if "timestamp" in df.columns:
+            df["Date"] = pd.to_datetime(df["timestamp"], unit="s")
+        elif "time" in df.columns:
+            df["Date"] = pd.to_datetime(df["time"], unit="s")
+        else:
+            raise ValueError("Không tìm thấy cột timestamp hoặc time trong dữ liệu")
+
         df = df.sort_values("Date")
 
         # Tính toán target (1 nếu giá tăng, 0 nếu giảm)
