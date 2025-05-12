@@ -404,12 +404,11 @@ class RPEAttention(nn.Module):
         output_attention=False,
         n_vars=330,
         distpath="",
-        max_relative_pos=128,  # Maximum relative position to consider
         rpe_embedding_dim=64,  # Dimension of relative position embeddings
         # Old parameters for distance matrix (commented for rollback)
     ):
         super(RPEAttention, self).__init__()
-        self.max_relative_pos = max_relative_pos
+        self.max_relative_pos = n_vars
         self.rpe_embedding_dim = rpe_embedding_dim
         self.scale = scale
         self.mask_flag = mask_flag
@@ -418,7 +417,7 @@ class RPEAttention(nn.Module):
 
         # New: Learnable RPE embeddings
         self.rpe_embedding = nn.Embedding(
-            2 * max_relative_pos + 1,  # For relative positions from -max to +max
+            2 * n_vars + 1,  # For relative positions from -max to +max
             rpe_embedding_dim,
         )
         self.rpe_projection = nn.Linear(rpe_embedding_dim, rpe_embedding_dim)
@@ -468,9 +467,6 @@ class RPEAttention(nn.Module):
             dim=-1
         )  # Sum over embedding dim to get scalar scores
         rpe_scores = rpe_scores.repeat(B, H, 1, 1)  # Shape: (B, H, L, L)
-
-        print(scores.shape)
-        print(rpe_scores.shape)
 
         # Add RPE scores to content scores
         scores = scores + rpe_scores
