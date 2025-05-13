@@ -459,6 +459,7 @@ class RPEAttention(nn.Module):
         attention_dropout=0.1,
         output_attention=False,
         n_vars=330,
+        distpath="",
         d_model=64,  # Dimension of the model (embedding size per head)
     ):
         super(RPEAttention, self).__init__()
