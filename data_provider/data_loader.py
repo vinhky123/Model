@@ -402,6 +402,8 @@ class Dataset_Custom(Dataset):
                 border1s[0] : border2s[0]
             ]  # Use only the training data to fit the scaler
             self.scaler.fit(train_data.values)  # Fit the scaler on the training data
+            print("Scaler Mean:", self.scaler.mean_)
+            print("Scaler Std:", self.scaler.scale_)
 
             # Transform the entire dataset using the scaler fitted on the training data
             data = self.scaler.transform(df_data.values)
