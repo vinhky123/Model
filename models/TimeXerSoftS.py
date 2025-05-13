@@ -142,6 +142,9 @@ class EncoderLayer(nn.Module):
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
+
+        print(x_glb.shape)
+
         x_glb_attn, _ = self.star_module(x_glb)
         x_glb_attn = torch.reshape(
             x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
