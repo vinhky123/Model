@@ -52,40 +52,52 @@ class STAR(nn.Module):
     def __init__(self, d_series, d_core):
         super(STAR, self).__init__()
         """
-        STar Aggregate-Redistribute Module
+        STAR với cơ chế cross-interaction giữa input và context
+        - d_series: kích thước của d_model (input/context)
+        - d_core: kích thước trung gian sau pooling
         """
         self.gen1 = nn.Linear(d_series, d_series)
         self.gen2 = nn.Linear(d_series, d_core)
         self.gen3 = nn.Linear(d_series + d_core, d_series)
         self.gen4 = nn.Linear(d_series, d_series)
 
-    def forward(self, input, *args, **kwargs):
-        batch_size, channels, d_series = input.shape
+    def forward(self, input, context, *args, **kwargs):
+        batch_size, channels, d_series = input.shape  # channels = N, d_series = d_model
+        assert context.shape == input.shape, "Context phải có cùng shape với input"
 
-        # set FFN
-        combined_mean = F.gelu(self.gen1(input))
-        combined_mean = self.gen2(combined_mean)
+        # Tạo biểu diễn từ context
+        combined_mean = F.gelu(self.gen1(context))  # Shape: [batch_size, N, d_model]
+        combined_mean = self.gen2(combined_mean)  # Shape: [batch_size, N, d_core]
 
-        # stochastic pooling
+        # Pooling trên context
         if self.training:
+            # Stochastic pooling khi huấn luyện
             ratio = F.softmax(combined_mean, dim=1)
-            ratio = ratio.permute(0, 2, 1)
-            ratio = ratio.reshape(-1, channels)
-            indices = torch.multinomial(ratio, 1)
-            indices = indices.view(batch_size, -1, 1).permute(0, 2, 1)
-            combined_mean = torch.gather(combined_mean, 1, indices)
-            combined_mean = combined_mean.repeat(1, channels, 1)
+            ratio = ratio.permute(0, 2, 1).reshape(-1, channels)
+            indices = (
+                torch.multinomial(ratio, 1).view(batch_size, -1, 1).permute(0, 2, 1)
+            )
+            combined_mean = torch.gather(
+                combined_mean, 1, indices
+            )  # Shape: [batch_size, 1, d_core]
+            combined_mean = combined_mean.repeat(
+                1, channels, 1
+            )  # Shape: [batch_size, N, d_core]
         else:
+            # Weighted sum khi đánh giá
             weight = F.softmax(combined_mean, dim=1)
             combined_mean = torch.sum(
                 combined_mean * weight, dim=1, keepdim=True
             ).repeat(1, channels, 1)
 
-        # mlp fusion
-        combined_mean_cat = torch.cat([input, combined_mean], -1)
-        combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
-        combined_mean_cat = self.gen4(combined_mean_cat)
-        output = combined_mean_cat
+        # Combine với input
+        combined_mean_cat = torch.cat(
+            [input, combined_mean], -1
+        )  # Shape: [batch_size, N, d_model + d_core]
+        combined_mean_cat = F.gelu(
+            self.gen3(combined_mean_cat)
+        )  # Shape: [batch_size, N, d_model]
+        output = self.gen4(combined_mean_cat)  # Shape: [batch_size, N, d_model]
 
         return output, None
 
@@ -143,9 +155,7 @@ class EncoderLayer(nn.Module):
         x_glb_ori = x[:, -1, :].unsqueeze(1)
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        print(x_glb.shape)
-
-        x_glb_attn, _ = self.star_module(x_glb)
+        x_glb_attn, _ = self.star_module(x_glb, cross)
         x_glb_attn = torch.reshape(
             x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
         ).unsqueeze(1)
