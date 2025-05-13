@@ -5,3 +5,6 @@ test_results/
 result_long_term_forecast.txt
 
 checkpoints/
+
+*/__pycache__/
+*/.DS_Store
