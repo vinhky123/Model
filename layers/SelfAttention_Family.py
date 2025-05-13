@@ -394,6 +394,7 @@ class RPEAttentionLayer(nn.Module):
         return self.out_projection(out), attn
 
 
+"""
 class RPEAttention(nn.Module):
     def __init__(
         self,
@@ -404,30 +405,18 @@ class RPEAttention(nn.Module):
         output_attention=False,
         n_vars=330,
         distpath="",
-        rpe_embedding_dim=64,  # Dimension of relative position embeddings
-        # Old parameters for distance matrix (commented for rollback)
     ):
         super(RPEAttention, self).__init__()
-        self.max_relative_pos = n_vars
-        self.rpe_embedding_dim = rpe_embedding_dim
         self.scale = scale
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
 
-        # New: Learnable RPE embeddings
-        self.rpe_embedding = nn.Embedding(
-            2 * n_vars + 1,  # For relative positions from -max to +max
-            rpe_embedding_dim,
-        )
-        self.rpe_projection = nn.Linear(rpe_embedding_dim, rpe_embedding_dim)
-
-        # Old: Distance matrix initialization (commented for rollback)
-        # self.n_vars = n_vars
-        # self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
-        # self.dist = torch.tensor(
-        #     pd.read_csv(distpath, header=None).values, dtype=torch.float32
-        # ).cuda()
+        self.n_vars = n_vars
+        self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
+        self.dist = torch.tensor(
+             pd.read_csv(distpath, header=None).values, dtype=torch.float32
+        ).cuda()
 
     def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
         B, L, H, E = queries.shape
@@ -437,44 +426,9 @@ class RPEAttention(nn.Module):
         # Compute content-based attention scores
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
 
-        # New: Compute relative position indices and RPE embeddings
-        device = queries.device
-        range_vec_rows = torch.arange(L, device=device)  # [0, 1, ..., L-1]
-        range_vec_cols = torch.arange(L + 4, device=device)  # [0, 1, ..., L+3]
-
-        # Tạo ma trận L x (L+4)
-        range_mat = range_vec_rows.unsqueeze(1) - range_vec_cols.unsqueeze(
-            0
-        )  # Shape: (L, L)
-        relative_pos = range_mat.clamp(
-            -self.max_relative_pos, self.max_relative_pos
-        )  # Clip to max_relative_pos
-        relative_pos = (
-            relative_pos + self.max_relative_pos
-        )  # Shift to non-negative for embedding
-
-        # Get RPE embeddings
-        rpe_emb = self.rpe_embedding(
-            relative_pos.to(device)
-        )  # Shape: (L, L, rpe_embedding_dim)
-        rpe_emb = self.rpe_projection(rpe_emb)  # Shape: (L, L, rpe_embedding_dim)
-
-        # Project RPE to match head dimension and repeat for batch and heads
-        rpe_scores = rpe_emb.unsqueeze(0).unsqueeze(
-            0
-        )  # Shape: (1, 1, L, L, rpe_embedding_dim)
-        rpe_scores = rpe_scores.sum(
-            dim=-1
-        )  # Sum over embedding dim to get scalar scores
-        rpe_scores = rpe_scores.repeat(B, H, 1, 1)  # Shape: (B, H, L, L)
-
-        # Add RPE scores to content scores
-        scores = scores + rpe_scores
-
-        # Old: Distance score computation (commented for rollback)
-        # dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
-        # dist_score = dist_score.repeat(B, 8, 1, 1)
-        # scores = scores + dist_score
+        dist_score = self.dist_projection(self.dist).unsqueeze(0).unsqueeze(0)
+        dist_score = dist_score.repeat(B, 8, 1, 1)
+        scores = scores + dist_score
 
         # Apply mask if needed
         if self.mask_flag:
@@ -486,6 +440,85 @@ class RPEAttention(nn.Module):
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
 
         # Compute output
+        V = torch.einsum("bhls,bshd->blhd", A, values)
+
+        if self.output_attention:
+            return V.contiguous(), A
+        else:
+            return V.contiguous(), None
+
+"""
+
+
+class RPEAttention(nn.Module):
+    def __init__(
+        self,
+        mask_flag=True,
+        factor=5,
+        scale=None,
+        attention_dropout=0.1,
+        output_attention=False,
+        n_vars=330,
+        d_model=64,  # Dimension of the model (embedding size per head)
+    ):
+        super(RPEAttention, self).__init__()
+        self.d_model = d_model
+        self.scale = scale
+        self.mask_flag = mask_flag
+        self.output_attention = output_attention
+        self.dropout = nn.Dropout(attention_dropout)
+
+    def rotary_matrix(self, position, d_model):
+        # Tính theta_i cho từng cặp chiều
+        theta = 1.0 / (10000 ** (torch.arange(0, d_model, 2).float() / d_model))
+        m_theta = position * theta
+        cos_part = torch.cos(m_theta)
+        sin_part = torch.sin(m_theta)
+
+        # Tạo ma trận xoay
+        rotary = torch.zeros(d_model, d_model)
+        for i in range(0, d_model, 2):
+            rotary[i, i] = cos_part[i // 2]
+            rotary[i, i + 1] = -sin_part[i // 2]
+            rotary[i + 1, i] = sin_part[i // 2]
+            rotary[i + 1, i + 1] = cos_part[i // 2]
+        return rotary
+
+    def apply_rotary_embedding(self, x, position, d_model):
+        # x: (B, L, H, E)
+        B, L, H, E = x.shape
+        rotary = self.rotary_matrix(position, E).to(x.device)
+        # Reshape x to (B, L, H, E//2, 2) for rotation
+        x_reshaped = x.view(B, L, H, E // 2, 2)
+        # Apply rotation
+        x_rotated = torch.einsum("bhlec,ec->bhlec", x_reshaped, rotary)
+        # Reshape back to (B, L, H, E)
+        x_rotated = x_rotated.view(B, L, H, E)
+        return x_rotated
+
+    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
+        B, L, H, E = queries.shape
+        _, S, _, D = values.shape
+        scale = self.scale or 1.0 / math.sqrt(E)
+
+        # Áp dụng RoPE lên queries và keys
+        positions = torch.arange(L, device=queries.device)
+        queries_rotated = self.apply_rotary_embedding(queries, positions, E)
+        keys_rotated = self.apply_rotary_embedding(keys, positions, E)
+
+        # Tính attention scores
+        scores = torch.einsum("blhe,bshe->bhls", queries_rotated, keys_rotated)
+
+        # Áp dụng mask nếu cần
+        if self.mask_flag:
+            if attn_mask is None:
+                attn_mask = TriangularCausalMask(B, L, device=queries.device)
+            scores.masked_fill_(attn_mask.mask, -np.inf)
+
+        # Softmax để có attention weights
+        A = self.dropout(torch.softmax(scale * scores, dim=-1))
+
+        # Tính output
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
         if self.output_attention:

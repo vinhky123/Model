@@ -171,6 +171,7 @@ class Model(nn.Module):
                             output_attention=False,
                             distpath=configs.distpath,
                             n_vars=configs.enc_in,
+                            d_model=configs.d_model,
                         ),
                         configs.d_model,
                         configs.n_heads,
