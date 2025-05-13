@@ -475,7 +475,9 @@ class RPEAttention(nn.Module):
             return self.rotary_cache[:seq_len]
 
         # Tạo ma trận xoay cho tất cả vị trí
-        positions = torch.arange(seq_len)
+        positions = torch.arange(
+            seq_len.item() if torch.is_tensor(seq_len) else seq_len
+        )
         theta = 1.0 / (10000 ** (torch.arange(0, d_model, 2).float() / d_model))
         angles = positions.unsqueeze(-1) * theta
 
@@ -484,7 +486,7 @@ class RPEAttention(nn.Module):
 
         # Tạo ma trận xoay cho mỗi vị trí
         rotary_matrices = []
-        for i in range(seq_len):
+        for i in range(seq_len.item() if torch.is_tensor(seq_len) else seq_len):
             rotary = torch.zeros(d_model, d_model)
             for j in range(0, d_model, 2):
                 rotary[j, j] = cos[i, j // 2]
