@@ -33,6 +33,7 @@ from models import (
     MultiPatchFormer,
     LSTM,
     TimeXerSoftS,
+    SwinFormer,
 )
 
 
@@ -72,6 +73,7 @@ class Exp_Basic(object):
             "MyModel": MyModel,
             "LSTM": LSTM,
             "TimeXerSoftS": TimeXerSoftS,
+            "SwinFormer": SwinFormer,
         }
         if args.model == "Mamba":
             print("Please make sure you have successfully installed mamba_ssm")
