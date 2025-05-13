@@ -395,8 +395,6 @@ class RPEAttentionLayer(nn.Module):
         return self.out_projection(out), attn
 
 
-"""
-
 class RPEAttention(nn.Module):
     def __init__(
         self,
@@ -436,61 +434,6 @@ class RPEAttention(nn.Module):
         if self.mask_flag:
             if attn_mask is None:
                 attn_mask = TriangularCausalMask(B, L, device=queries.device)
-            scores.masked_fill_(attn_mask.mask, -np.inf)
-
-        # Softmax to get attention weights
-        A = self.dropout(torch.softmax(scale * scores, dim=-1))
-
-        # Compute output
-        V = torch.einsum("bhls,bshd->blhd", A, values)
-
-        if self.output_attention:
-            return V.contiguous(), A
-        else:
-            return V.contiguous(), None
-"""
-
-
-class RPEAttention(nn.Module):
-    def __init__(
-        self,
-        mask_flag=True,
-        factor=5,
-        scale=None,
-        attention_dropout=0.1,
-        output_attention=False,
-        n_vars=330,
-        distpath="",
-    ):
-        super(RPEAttention, self).__init__()
-        self.scale = scale
-        self.mask_flag = mask_flag
-        self.output_attention = output_attention
-        self.dropout = nn.Dropout(attention_dropout)
-
-        self.n_vars = n_vars
-        self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
-        # self.dist = torch.tensor(
-        #     pd.read_csv(distpath, header=None).values, dtype=torch.float32
-        # ).cuda()
-
-    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
-        B, L, H, E = queries.shape
-        _, S, _, D = values.shape
-        scale = self.scale or 1.0 / math.sqrt(E)
-        device = queries.device
-
-        rotary = RotaryEmbedding(E).to(device)
-        queries = rotary.rotate_queries_or_keys(queries)
-        keys = rotary.rotate_queries_or_keys(keys)
-
-        # Compute content-based attention scores
-        scores = torch.einsum("blhe,bshe->bhls", queries, keys)
-
-        # Apply mask if needed
-        if self.mask_flag:
-            if attn_mask is None:
-                attn_mask = TriangularCausalMask(B, L, device=device)
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         # Softmax to get attention weights
