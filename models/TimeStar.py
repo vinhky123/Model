@@ -129,7 +129,7 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
 
-    def forward(self, x):
+    def forward(self, x, x_mask=None, cross_mask=None, tau=None, delta=None):
         B, L, D = x.shape
         x = x + self.dropout(self.self_star(x)[0])
         x = self.norm1(x)
