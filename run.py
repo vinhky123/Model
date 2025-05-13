@@ -334,6 +334,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--extra_tag", type=str, default="", help="Anything extra")
 
+    parser.add_argument("--d_core", type=int, default=64, help="d_core for star module")
+
     # TimeXer
     parser.add_argument("--patch_len", type=int, default=16, help="patch length")
 
