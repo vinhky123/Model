@@ -242,9 +242,8 @@ class Model(nn.Module):
         _, _, N = x_enc.shape
 
         en_embed, n_vars = self.en_embedding(x_enc.permute(0, 2, 1))
-        ex_embed = self.ex_embedding(x_enc, x_mark_enc)
 
-        enc_out = self.encoder(en_embed, ex_embed)
+        enc_out = self.encoder(en_embed)
         enc_out = torch.reshape(
             enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
         )
