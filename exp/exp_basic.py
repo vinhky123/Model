@@ -32,6 +32,7 @@ from models import (
     WPMixer,
     MultiPatchFormer,
     LSTM,
+    TimeXerSoftS,
 )
 
 
@@ -70,6 +71,7 @@ class Exp_Basic(object):
             "MultiPatchFormer": MultiPatchFormer,
             "MyModel": MyModel,
             "LSTM": LSTM,
+            "TimeXerSoftS": TimeXerSoftS,
         }
         if args.model == "Mamba":
             print("Please make sure you have successfully installed mamba_ssm")
