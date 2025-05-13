@@ -95,11 +95,9 @@ class Encoder(nn.Module):
         self.norm = norm_layer
         self.projection = projection
 
-    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
+    def forward(self, x, x_mask=None, cross_mask=None, tau=None, delta=None):
         for layer in self.layers:
-            x = layer(
-                x, cross, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta
-            )
+            x = layer(x, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta)
 
         if self.norm is not None:
             x = self.norm(x)
