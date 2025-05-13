@@ -478,10 +478,11 @@ class RPEAttention(nn.Module):
         B, L, H, E = queries.shape
         _, S, _, D = values.shape
         scale = self.scale or 1.0 / math.sqrt(E)
+        device = queries.device
 
-        rotary = RotaryEmbedding(E)
-        queries = rotary.rotate_queries_or_keys(queries).cuda()
-        keys = rotary.rotate_queries_or_keys(keys).cuda()
+        rotary = RotaryEmbedding(E).to(device)
+        queries = rotary.rotate_queries_or_keys(queries)
+        keys = rotary.rotate_queries_or_keys(keys)
 
         # Compute content-based attention scores
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
@@ -489,7 +490,7 @@ class RPEAttention(nn.Module):
         # Apply mask if needed
         if self.mask_flag:
             if attn_mask is None:
-                attn_mask = TriangularCausalMask(B, L, device=queries.device)
+                attn_mask = TriangularCausalMask(B, L, device=device)
             scores.masked_fill_(attn_mask.mask, -np.inf)
 
         # Softmax to get attention weights
