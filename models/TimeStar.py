@@ -131,13 +131,13 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, x_mask=None, cross_mask=None, tau=None, delta=None):
         B, L, D = x.shape
-        x = x + self.dropout(self.self_star(x)[0])
+        x = x + self.dropout(self.self_attention(x)[0])
         x = self.norm1(x)
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        x_glb_attn = self.dropout(self.cross_star(x_glb)[0])
+        x_glb_attn = self.dropout(self.cross_attention(x_glb)[0])
 
         x_glb_attn = torch.reshape(
             x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
