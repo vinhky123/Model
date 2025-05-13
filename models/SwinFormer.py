@@ -252,9 +252,11 @@ class Model(nn.Module):
         enc_out, _ = self.encoder(enc_out, H, W)  # [B, num_patches, d_model]
 
         # Reshape để khớp với FlattenHead
-        enc_out = enc_out.view(-1, n_vars, H, W, self.d_model).permute(
-            0, 1, 4, 2, 3
-        )  # [B, n_vars, d_model, H, W]
+        enc_out = enc_out.view(-1, H, W, self.d_model)  # [B, H, W, d_model]
+        enc_out = enc_out.unsqueeze(1).repeat(
+            1, n_vars, 1, 1, 1
+        )  # [B, n_vars, H, W, d_model]
+        enc_out = enc_out.permute(0, 1, 4, 2, 3)  # [B, n_vars, d_model, H, W]
         enc_out = enc_out.reshape(
             -1, n_vars, self.d_model, H * W
         )  # [B, n_vars, d_model, patch_num]
