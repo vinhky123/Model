@@ -196,31 +196,22 @@ class SwinEncoder(nn.Module):
 
 
 class Model(nn.Module):
-    """
-    PatchTST với Swin Transformer 2D, giữ flow của PatchTST gốc
-    Paper link (PatchTST): https://arxiv.org/pdf/2211.14730.pdf
-    """
-
     def __init__(self, configs, patch_len=16, stride=8):
-        """
-        patch_len: int, patch len for patch_embedding (theo seq_len)
-        stride: int, stride for patch_embedding (theo seq_len)
-        """
         super().__init__()
         self.task_name = configs.task_name
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.n_vars = configs.enc_in
-        self.d_model = configs.d_model
 
         # Patch embedding 2D
-        patch_size = (patch_len, 1)  # Chỉ cắt theo seq_len, n_vars giữ nguyên
-        window_size = (7, self.n_vars)  # Window bao quát hết n_vars
+        patch_size = (patch_len, 1)
         self.patch_embedding = PatchEmbed2D(
             self.seq_len, self.n_vars, patch_size, configs.d_model, configs.dropout
         )
 
-        # Encoder
+        # Window size động
+        H = self.seq_len // patch_len
+        window_size = (min(7, H), self.n_vars)  # Đảm bảo window_size[0] <= H
         self.encoder = SwinEncoder(configs, window_size=window_size)
 
         # Prediction Head
