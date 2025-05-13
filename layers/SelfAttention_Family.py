@@ -470,9 +470,9 @@ class RPEAttention(nn.Module):
 
         self.n_vars = n_vars
         self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
-        self.dist = torch.tensor(
-            pd.read_csv(distpath, header=None).values, dtype=torch.float32
-        ).cuda()
+        # self.dist = torch.tensor(
+        #     pd.read_csv(distpath, header=None).values, dtype=torch.float32
+        # ).cuda()
 
     def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
         B, L, H, E = queries.shape
