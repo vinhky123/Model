@@ -468,27 +468,38 @@ class RPEAttention(nn.Module):
         self.mask_flag = mask_flag
         self.output_attention = output_attention
         self.dropout = nn.Dropout(attention_dropout)
+        self.register_buffer("rotary_cache", None)
 
-    def rotary_matrix(self, position, d_model):
-        # Tính theta_i cho từng cặp chiều
+    def get_rotary_matrices(self, seq_len, d_model):
+        if self.rotary_cache is not None and self.rotary_cache.shape[0] >= seq_len:
+            return self.rotary_cache[:seq_len]
+
+        # Tạo ma trận xoay cho tất cả vị trí
+        positions = torch.arange(seq_len)
         theta = 1.0 / (10000 ** (torch.arange(0, d_model, 2).float() / d_model))
-        m_theta = position * theta
-        cos_part = torch.cos(m_theta)
-        sin_part = torch.sin(m_theta)
+        angles = positions.unsqueeze(-1) * theta
 
-        # Tạo ma trận xoay
-        rotary = torch.zeros(d_model, d_model)
-        for i in range(0, d_model, 2):
-            rotary[i, i] = cos_part[i // 2]
-            rotary[i, i + 1] = -sin_part[i // 2]
-            rotary[i + 1, i] = sin_part[i // 2]
-            rotary[i + 1, i + 1] = cos_part[i // 2]
-        return rotary
+        cos = torch.cos(angles)
+        sin = torch.sin(angles)
+
+        # Tạo ma trận xoay cho mỗi vị trí
+        rotary_matrices = []
+        for i in range(seq_len):
+            rotary = torch.zeros(d_model, d_model)
+            for j in range(0, d_model, 2):
+                rotary[j, j] = cos[i, j // 2]
+                rotary[j, j + 1] = -sin[i, j // 2]
+                rotary[j + 1, j] = sin[i, j // 2]
+                rotary[j + 1, j + 1] = cos[i, j // 2]
+            rotary_matrices.append(rotary)
+
+        self.rotary_cache = torch.stack(rotary_matrices)
+        return self.rotary_cache
 
     def apply_rotary_embedding(self, x, position, d_model):
         # x: (B, L, H, E)
         B, L, H, E = x.shape
-        rotary = self.rotary_matrix(position, E).to(x.device)
+        rotary = self.get_rotary_matrices(position, E).to(x.device)
         # Reshape x to (B, L, H, E//2, 2) for rotation
         x_reshaped = x.view(B, L, H, E // 2, 2)
         # Apply rotation
