@@ -153,6 +153,7 @@ class EncoderLayer(nn.Module):
         x = self.norm1(x)
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
+        print(f"Global token shape: {x_glb_ori.shape}")
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
         x_glb_attn, _ = self.star_module(x_glb, cross)
         x_glb_attn = torch.reshape(
