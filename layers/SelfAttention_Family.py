@@ -480,8 +480,8 @@ class RPEAttention(nn.Module):
         scale = self.scale or 1.0 / math.sqrt(E)
 
         rotary = RotaryEmbedding(E)
-        queries = rotary.rotate_queries(queries)
-        keys = rotary.rotate_keys(keys)
+        queries = rotary.rotate_queries_or_keys(queries)
+        keys = rotary.rotate_queries_or_keys(keys)
 
         # Compute content-based attention scores
         scores = torch.einsum("blhe,bshe->bhls", queries, keys)
