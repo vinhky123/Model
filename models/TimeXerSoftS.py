@@ -2,8 +2,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from layers.SelfAttention_Family import FullAttention, AttentionLayer
-from layers.Embed import DataEmbedding_inverted, PositionalEmbedding
+from layers.Embed import PositionalEmbedding
 import numpy as np
+
+
+class DataEmbedding_inverted(nn.Module):
+    def __init__(self, c_in, d_model, embed_type="fixed", freq="h", dropout=0.1):
+        super(DataEmbedding_inverted, self).__init__()
+        self.value_embedding = nn.Linear(c_in, d_model)
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, x, x_mark):
+        x = x.permute(0, 2, 1)
+        # x: [Batch Variate Time]
+        x = self.value_embedding(x)
+
+        # x: [Batch Variate d_model]
+        return self.dropout(x)
 
 
 class FlattenHead(nn.Module):
@@ -153,7 +168,6 @@ class EncoderLayer(nn.Module):
         x = self.norm1(x)
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
-        print(f"Global token shape: {x_glb_ori.shape}")
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
         x_glb_attn, _ = self.star_module(x_glb, cross)
         x_glb_attn = torch.reshape(
