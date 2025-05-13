@@ -394,7 +394,6 @@ class RPEAttentionLayer(nn.Module):
         return self.out_projection(out), attn
 
 
-"""
 class RPEAttention(nn.Module):
     def __init__(
         self,
@@ -415,7 +414,7 @@ class RPEAttention(nn.Module):
         self.n_vars = n_vars
         self.dist_projection = nn.Linear(self.n_vars, self.n_vars + 4)
         self.dist = torch.tensor(
-             pd.read_csv(distpath, header=None).values, dtype=torch.float32
+            pd.read_csv(distpath, header=None).values, dtype=torch.float32
         ).cuda()
 
     def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
@@ -440,99 +439,6 @@ class RPEAttention(nn.Module):
         A = self.dropout(torch.softmax(scale * scores, dim=-1))
 
         # Compute output
-        V = torch.einsum("bhls,bshd->blhd", A, values)
-
-        if self.output_attention:
-            return V.contiguous(), A
-        else:
-            return V.contiguous(), None
-
-"""
-
-
-class RPEAttention(nn.Module):
-    def __init__(
-        self,
-        mask_flag=True,
-        factor=5,
-        scale=None,
-        attention_dropout=0.1,
-        output_attention=False,
-        n_vars=330,
-        distpath="",
-        d_model=64,  # Dimension of the model (embedding size per head)
-    ):
-        super(RPEAttention, self).__init__()
-        self.d_model = d_model
-        self.scale = scale
-        self.mask_flag = mask_flag
-        self.output_attention = output_attention
-        self.dropout = nn.Dropout(attention_dropout)
-        self.register_buffer("rotary_cache", None)
-
-    def get_rotary_matrices(self, seq_len, d_model):
-        if self.rotary_cache is not None and self.rotary_cache.shape[0] >= seq_len:
-            return self.rotary_cache[:seq_len]
-
-        # Tạo ma trận xoay cho tất cả vị trí
-        positions = torch.arange(
-            seq_len.item() if torch.is_tensor(seq_len) else seq_len
-        )
-        theta = 1.0 / (10000 ** (torch.arange(0, d_model, 2).float() / d_model))
-        angles = positions.unsqueeze(-1) * theta
-
-        cos = torch.cos(angles)
-        sin = torch.sin(angles)
-
-        # Tạo ma trận xoay cho mỗi vị trí
-        rotary_matrices = []
-        for i in range(seq_len.item() if torch.is_tensor(seq_len) else seq_len):
-            rotary = torch.zeros(d_model, d_model)
-            for j in range(0, d_model, 2):
-                rotary[j, j] = cos[i, j // 2]
-                rotary[j, j + 1] = -sin[i, j // 2]
-                rotary[j + 1, j] = sin[i, j // 2]
-                rotary[j + 1, j + 1] = cos[i, j // 2]
-            rotary_matrices.append(rotary)
-
-        self.rotary_cache = torch.stack(rotary_matrices)
-        return self.rotary_cache
-
-    def apply_rotary_embedding(self, x, position, d_model):
-        # x: (B, L, H, E)
-        B, L, H, E = x.shape
-        rotary = self.get_rotary_matrices(position, E).to(x.device)
-        # Reshape x to (B, L, H, E//2, 2) for rotation
-        x_reshaped = x.view(B, L, H, E // 2, 2)
-        # Apply rotation
-        x_rotated = torch.einsum("bhlec,ec->bhlec", x_reshaped, rotary)
-        # Reshape back to (B, L, H, E)
-        x_rotated = x_rotated.view(B, L, H, E)
-        return x_rotated
-
-    def forward(self, queries, keys, values, attn_mask=None, tau=None, delta=None):
-        B, L, H, E = queries.shape
-        _, S, _, D = values.shape
-        scale = self.scale or 1.0 / math.sqrt(E)
-
-        # Áp dụng RoPE lên queries và keys
-        positions = torch.arange(L, device=queries.device)
-        queries_rotated = self.apply_rotary_embedding(queries, positions, E)
-        keys_rotated = self.apply_rotary_embedding(keys, positions, E)
-
-        # Tính attention scores
-        scores = torch.einsum("blhe,bshe->bhls", queries_rotated, keys_rotated)
-
-        # Áp dụng mask nếu cần
-        if self.mask_flag:
-            if attn_mask is None:
-                attn_mask = TriangularCausalMask(B, L, device=queries.device)
-            scores.masked_fill_(attn_mask.mask, -np.inf)
-
-        # Softmax để có attention weights
-        A = self.dropout(torch.softmax(scale * scores, dim=-1))
-
-        # Tính output
         V = torch.einsum("bhls,bshd->blhd", A, values)
 
         if self.output_attention:
