@@ -7,7 +7,6 @@ from reformer_pytorch import LSHSelfAttention
 from einops import rearrange, repeat
 import pandas as pd
 import math
-from rotary_embedding_torch import RotaryEmbedding
 
 
 class DSAttention(nn.Module):
