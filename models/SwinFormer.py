@@ -202,6 +202,7 @@ class Model(nn.Module):
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         self.n_vars = configs.enc_in
+        self.d_model = configs.d_model
 
         # Patch embedding 2D
         patch_size = (patch_len, 1)
