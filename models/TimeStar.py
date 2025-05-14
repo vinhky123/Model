@@ -9,14 +9,20 @@ import numpy as np
 class STAR(nn.Module):
     def __init__(self, d_series, d_core):
         super(STAR, self).__init__()
+        """
+        STar Aggregate-Redistribute Module
+        """
 
         self.gen1 = nn.Linear(d_series, d_series)
         self.gen2 = nn.Linear(d_series, d_core)
         self.gen3 = nn.Linear(d_series + d_core, d_series)
         self.gen4 = nn.Linear(d_series, d_series)
 
-    def forward(self, input, *args, **kwargs):
+    def forward(self, input, cross, *args, **kwargs):
         batch_size, channels, d_series = input.shape
+
+        if cross is not None:
+            input = torch.cat([input, cross], dim=1)
 
         # set FFN
         combined_mean = F.gelu(self.gen1(input))
@@ -95,9 +101,11 @@ class Encoder(nn.Module):
         self.norm = norm_layer
         self.projection = projection
 
-    def forward(self, x, x_mask=None, cross_mask=None, tau=None, delta=None):
+    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
         for layer in self.layers:
-            x = layer(x, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta)
+            x = layer(
+                x, cross, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta
+            )
 
         if self.norm is not None:
             x = self.norm(x)
@@ -110,8 +118,8 @@ class Encoder(nn.Module):
 class EncoderLayer(nn.Module):
     def __init__(
         self,
-        self_star,
-        cross_star,
+        self_attention,
+        cross_attention,
         d_model,
         d_ff=None,
         dropout=0.1,
@@ -119,8 +127,8 @@ class EncoderLayer(nn.Module):
     ):
         super(EncoderLayer, self).__init__()
         d_ff = d_ff or 4 * d_model
-        self.self_attention = self_star
-        self.cross_attention = cross_star
+        self.self_attention = self_attention
+        self.cross_attention = cross_attention
         self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
         self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
         self.norm1 = nn.LayerNorm(d_model)
@@ -129,16 +137,21 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
 
-    def forward(self, x, x_mask=None, cross_mask=None, tau=None, delta=None):
-        B, L, D = x.shape
-        x = x + self.dropout(self.self_attention(x)[0])
+    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
+        B, L, D = cross.shape
+        x = x + self.dropout(
+            self.self_attention(x, cross=None, attn_mask=x_mask, tau=tau, delta=None)[0]
+        )
         x = self.norm1(x)
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        x_glb_attn = self.dropout(self.cross_attention(x_glb)[0])
-
+        x_glb_attn = self.dropout(
+            self.cross_attention(
+                x_glb, cross=cross, attn_mask=cross_mask, tau=tau, delta=delta
+            )[0]
+        )
         x_glb_attn = torch.reshape(
             x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
         ).unsqueeze(1)
@@ -168,6 +181,14 @@ class Model(nn.Module):
         # Embedding
         self.en_embedding = EnEmbedding(
             self.n_vars, configs.d_model, self.patch_len, configs.dropout
+        )
+
+        self.ex_embedding = DataEmbedding_inverted(
+            configs.seq_len,
+            configs.d_model,
+            configs.embed,
+            configs.freq,
+            configs.dropout,
         )
 
         # Encoder-only architecture
@@ -205,8 +226,9 @@ class Model(nn.Module):
         en_embed, n_vars = self.en_embedding(
             x_enc[:, :, -1].unsqueeze(-1).permute(0, 2, 1)
         )
+        ex_embed = self.ex_embedding(x_enc[:, :, :-1], x_mark_enc)
 
-        enc_out = self.encoder(en_embed)
+        enc_out = self.encoder(en_embed, ex_embed)
         enc_out = torch.reshape(
             enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
         )
@@ -240,8 +262,9 @@ class Model(nn.Module):
         _, _, N = x_enc.shape
 
         en_embed, n_vars = self.en_embedding(x_enc.permute(0, 2, 1))
+        ex_embed = self.ex_embedding(x_enc, x_mark_enc)
 
-        enc_out = self.encoder(en_embed)
+        enc_out = self.encoder(en_embed, ex_embed)
         enc_out = torch.reshape(
             enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
         )
