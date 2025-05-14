@@ -17,6 +17,7 @@ class STAR(nn.Module):
         self.gen2 = nn.Linear(d_series, d_core)
         self.gen3 = nn.Linear(d_series + d_core, d_series)
         # self.gen4 = nn.Linear(d_series, d_series)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, input, cross, *args, **kwargs):
         batch_size, channels, d_series = input.shape
@@ -27,8 +28,8 @@ class STAR(nn.Module):
             total_channels = input.shape[1]
 
         # set FFN
-        combined_mean = F.gelu(self.gen1(input))
-        combined_mean = self.gen2(combined_mean)
+        combined_mean = self.dropout(F.gelu(self.gen1(input)))
+        combined_mean = self.dropout(self.gen2(combined_mean))
 
         # stochastic pooling
         if self.training:
@@ -47,9 +48,10 @@ class STAR(nn.Module):
 
         # mlp fusion
         combined_mean_cat = torch.cat([input, combined_mean], -1)
-        combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
+        combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
 
         output = combined_mean_cat[:, :channels, :]
+        output = input + combined_mean_cat
 
         return output, None
 
