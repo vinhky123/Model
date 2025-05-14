@@ -98,7 +98,7 @@ class STAR_Patch(nn.Module):
             ).repeat(1, channels, 1)
 
         combined_mean = combined_mean.reshape(-1, 1, d_series)
-        combined_mean_cat = torch.cat([input[:, :-1, :], combined_mean], -1)
+        combined_mean_cat = torch.cat([input[:, :-1, :], combined_mean], dim=1)
         # combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
 
         output = self.dropout(self.output(combined_mean_cat))
