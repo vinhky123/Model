@@ -53,8 +53,6 @@ class STAR_Patch(nn.Module):
     def __init__(self, d_series, patch_num, d_core):
         super(STAR_Patch, self).__init__()
 
-        print(d_series, patch_num, d_core)
-
         self.gen1 = nn.Linear(d_series, d_series)
 
         self.output = nn.Linear(d_series * (patch_num + 1), d_series * patch_num)
@@ -62,6 +60,9 @@ class STAR_Patch(nn.Module):
 
     def forward(self, input, input_raw, *args, **kwargs):
         batch_size, channels, d_series = input_raw.shape
+
+        print(input.shape)
+        print(input_raw.shape)
 
         # set FFN
         # combined_mean = self.dropout(F.gelu(self.gen1(input)))
