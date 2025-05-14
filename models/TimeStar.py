@@ -16,7 +16,7 @@ class STAR(nn.Module):
         self.gen1 = nn.Linear(d_series, d_series)
         self.gen2 = nn.Linear(d_series, d_core)
         self.gen3 = nn.Linear(d_series + d_core, d_series)
-        self.gen4 = nn.Linear(d_series, d_series)
+        # self.gen4 = nn.Linear(d_series, d_series)
 
     def forward(self, input, cross, *args, **kwargs):
         batch_size, channels, d_series = input.shape
@@ -48,7 +48,6 @@ class STAR(nn.Module):
         # mlp fusion
         combined_mean_cat = torch.cat([input, combined_mean], -1)
         combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
-        combined_mean_cat = self.gen4(combined_mean_cat)
 
         output = combined_mean_cat[:, :channels, :]
 
