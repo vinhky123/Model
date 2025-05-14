@@ -50,8 +50,9 @@ class STAR(nn.Module):
         combined_mean_cat = torch.cat([input, combined_mean], -1)
         combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
 
-        output = combined_mean_cat[:, :channels, :]
-        output = input + output
+        # Only use the original channels for output
+        output = combined_mean_cat + input
+        output = output[:, :channels, :]
 
         return output, None
 
