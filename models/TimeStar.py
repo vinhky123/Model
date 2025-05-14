@@ -53,6 +53,8 @@ class STAR_Patch(nn.Module):
     def __init__(self, d_series, patch_num, d_core):
         super(STAR_Patch, self).__init__()
 
+        print(d_series, patch_num, d_core)
+
         self.gen1 = nn.Linear(d_series, d_series)
 
         self.output = nn.Linear(d_series * (patch_num + 1), d_series * patch_num)
