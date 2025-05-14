@@ -131,7 +131,9 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, x_mask=None, cross_mask=None, tau=None, delta=None):
         B, L, D = x.shape
-        x = x + self.dropout(self.self_attention(x)[0])
+        x = x + self.dropout(
+            self.self_attention(x, x, x, attn_mask=x_mask, tau=tau, delta=None)[0]
+        )
         x = self.norm1(x)
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
@@ -174,7 +176,16 @@ class Model(nn.Module):
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    STAR(configs.d_model, configs.d_core),
+                    AttentionLayer(
+                        FullAttention(
+                            False,
+                            configs.factor,
+                            attention_dropout=configs.dropout,
+                            output_attention=False,
+                        ),
+                        configs.d_model,
+                        configs.n_heads,
+                    ),
                     STAR(configs.d_model, configs.d_core),
                     configs.d_model,
                     configs.d_ff,
