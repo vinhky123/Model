@@ -16,43 +16,83 @@ class STAR(nn.Module):
         self.gen1 = nn.Linear(d_series, d_series)
         self.gen2 = nn.Linear(d_series, d_core)
         self.gen3 = nn.Linear(d_series + d_core, d_series)
-        # self.gen4 = nn.Linear(d_series, d_series)
-        self.dropout = nn.Dropout(0.1)
+        self.gen4 = nn.Linear(d_series, d_series)
 
-    def forward(self, input, cross, *args, **kwargs):
+    def forward(self, input, *args, **kwargs):
         batch_size, channels, d_series = input.shape
-        total_channels = channels
-
-        if cross is not None:
-            input = torch.cat([input, cross], dim=1)
-            total_channels = input.shape[1]
 
         # set FFN
-        combined_mean = self.dropout(F.gelu(self.gen1(input)))
-        combined_mean = self.dropout(self.gen2(combined_mean))
+        combined_mean = F.gelu(self.gen1(input))
+        combined_mean = self.gen2(combined_mean)
 
         # stochastic pooling
         if self.training:
             ratio = F.softmax(combined_mean, dim=1)
             ratio = ratio.permute(0, 2, 1)
-            ratio = ratio.reshape(-1, total_channels)
+            ratio = ratio.reshape(-1, channels)
             indices = torch.multinomial(ratio, 1)
             indices = indices.view(batch_size, -1, 1).permute(0, 2, 1)
             combined_mean = torch.gather(combined_mean, 1, indices)
-            combined_mean = combined_mean.repeat(1, total_channels, 1)
+            combined_mean = combined_mean.repeat(1, channels, 1)
         else:
             weight = F.softmax(combined_mean, dim=1)
             combined_mean = torch.sum(
                 combined_mean * weight, dim=1, keepdim=True
-            ).repeat(1, total_channels, 1)
+            ).repeat(1, channels, 1)
 
         # mlp fusion
         combined_mean_cat = torch.cat([input, combined_mean], -1)
-        combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
+        combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
+        combined_mean_cat = self.gen4(combined_mean_cat)
+        output = combined_mean_cat
 
-        # Only use the original channels for output
-        output = combined_mean_cat + input
-        output = output[:, :channels, :]
+        return output, None
+
+
+class STAR_Patch(nn.Module):
+    def __init__(self, d_series, patch_num, d_core):
+        super(STAR_Patch, self).__init__()
+
+        self.gen1 = nn.Linear(d_series, d_series)
+
+        self.output = nn.Linear(d_series * (patch_num + 1), d_series * patch_num)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, input, input_raw, *args, **kwargs):
+        batch_size, channels, d_series = input_raw.shape
+
+        # set FFN
+        # combined_mean = self.dropout(F.gelu(self.gen1(input)))
+        # combined_mean = self.dropout(self.gen2(combined_mean))
+
+        # input shape: [b * n_vars, patch_num + 1, d_model]
+        x_glb = input[:, -1, :].unsqueeze(1)
+
+        # [b * n_vars, 1, d_series]
+        x_glb = torch.reshape(x_glb, (batch_size, -1, d_series))
+        # [b, n_vars, d_series]
+        combined_mean = self.dropout(F.gelu(self.gen1(x_glb)))
+
+        # stochastic pooling
+        if self.training:
+            ratio = F.softmax(combined_mean, dim=1)
+            ratio = ratio.permute(0, 2, 1)
+            ratio = ratio.reshape(-1, channels)
+            indices = torch.multinomial(ratio, 1)
+            indices = indices.view(batch_size, -1, 1).permute(0, 2, 1)
+            combined_mean = torch.gather(combined_mean, 1, indices)
+            combined_mean = combined_mean.repeat(1, channels, 1)
+        else:
+            weight = F.softmax(combined_mean, dim=1)
+            combined_mean = torch.sum(
+                combined_mean * weight, dim=1, keepdim=True
+            ).repeat(1, channels, 1)
+
+        combined_mean = combined_mean.reshape(-1, 1, d_series)
+        combined_mean_cat = torch.cat([input[:, :-1, :], combined_mean], -1)
+        # combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
+
+        output = self.dropout(self.output(combined_mean_cat))
 
         return output, None
 
@@ -106,10 +146,10 @@ class Encoder(nn.Module):
         self.norm = norm_layer
         self.projection = projection
 
-    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
+    def forward(self, x, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None):
         for layer in self.layers:
             x = layer(
-                x, cross, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta
+                x, x_raw, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta
             )
 
         if self.norm is not None:
@@ -142,28 +182,30 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
 
-    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
-        B, L, D = cross.shape
-        x = x + self.dropout(
-            self.self_attention(x, cross=None, attn_mask=x_mask, tau=tau, delta=None)[0]
-        )
+    def forward(self, x, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None):
+        B, L, D = x_raw.shape
+        # x shape [b * n_vars, patch_num + 1, d_model]
+        x = x + self.dropout(self.self_attention(x)[0])
         x = self.norm1(x)
 
-        x_glb_ori = x[:, -1, :].unsqueeze(1)
-        x_glb = torch.reshape(x_glb_ori, (B, -1, D))
+        x_attn = self.dropout(self.cross_attention(x, x_raw)[0])
+        y = x + x_attn
 
-        x_glb_attn = self.dropout(
-            self.cross_attention(
-                x_glb, cross=cross, attn_mask=cross_mask, tau=tau, delta=delta
-            )[0]
-        )
-        x_glb_attn = torch.reshape(
-            x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
-        ).unsqueeze(1)
-        x_glb = x_glb_ori + x_glb_attn
-        x_glb = self.norm2(x_glb)
+        # x_glb_ori = x[:, -1, :].unsqueeze(1)
+        # x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        y = x = torch.cat([x[:, :-1, :], x_glb], dim=1)
+        # x_glb_attn = self.dropout(
+        #        self.cross_attention(
+        #            x_glb, cross=cross, attn_mask=cross_mask, tau=tau, delta=delta
+        #        )[0]
+        #    )
+        # x_glb_attn = torch.reshape(
+        #    x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
+        # ).unsqueeze(1)
+        # x_glb = x_glb_ori + x_glb_attn
+        # x_glb = self.norm2(x_glb)
+
+        # y = x = torch.cat([x[:, :-1, :], x_glb], dim=1)
 
         y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))
         y = self.dropout(self.conv2(y).transpose(-1, 1))
@@ -201,7 +243,7 @@ class Model(nn.Module):
             [
                 EncoderLayer(
                     STAR(configs.d_model, configs.d_core),
-                    STAR(configs.d_model, configs.d_core),
+                    STAR_Patch(configs.d_model, self.patch_num, configs.d_core),
                     configs.d_model,
                     configs.d_ff,
                     dropout=configs.dropout,
@@ -216,44 +258,6 @@ class Model(nn.Module):
             configs.enc_in, self.head_nf, configs.pred_len, head_dropout=configs.dropout
         )
 
-    def forecast(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
-        if self.use_norm:
-            # Normalization from Non-stationary Transformer
-            means = x_enc.mean(1, keepdim=True).detach()
-            x_enc = x_enc - means
-            stdev = torch.sqrt(
-                torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5
-            )
-            x_enc /= stdev
-
-        _, _, N = x_enc.shape
-
-        en_embed, n_vars = self.en_embedding(
-            x_enc[:, :, -1].unsqueeze(-1).permute(0, 2, 1)
-        )
-        ex_embed = self.ex_embedding(x_enc[:, :, :-1], x_mark_enc)
-
-        enc_out = self.encoder(en_embed, ex_embed)
-        enc_out = torch.reshape(
-            enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
-        )
-        # z: [bs x nvars x d_model x patch_num]
-        enc_out = enc_out.permute(0, 1, 3, 2)
-
-        dec_out = self.head(enc_out)  # z: [bs x nvars x target_window]
-        dec_out = dec_out.permute(0, 2, 1)
-
-        if self.use_norm:
-            # De-Normalization from Non-stationary Transformer
-            dec_out = dec_out * (
-                stdev[:, 0, -1:].unsqueeze(1).repeat(1, self.pred_len, 1)
-            )
-            dec_out = dec_out + (
-                means[:, 0, -1:].unsqueeze(1).repeat(1, self.pred_len, 1)
-            )
-
-        return dec_out
-
     def forecast_multi(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
         if self.use_norm:
             # Normalization from Non-stationary Transformer
@@ -267,9 +271,8 @@ class Model(nn.Module):
         _, _, N = x_enc.shape
 
         en_embed, n_vars = self.en_embedding(x_enc.permute(0, 2, 1))
-        ex_embed = self.ex_embedding(x_enc, x_mark_enc)
 
-        enc_out = self.encoder(en_embed, ex_embed)
+        enc_out = self.encoder(en_embed, x_enc)
         enc_out = torch.reshape(
             enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
         )
