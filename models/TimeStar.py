@@ -55,7 +55,7 @@ class STAR_Patch(nn.Module):
 
         self.gen1 = nn.Linear(d_series, d_series)
 
-        self.output = nn.Linear(d_series * (patch_num + 1), d_series * patch_num)
+        self.output = nn.Linear(d_series, d_series)
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, input, input_raw, *args, **kwargs):
@@ -99,7 +99,7 @@ class STAR_Patch(nn.Module):
 
         combined_mean = combined_mean.reshape(-1, 1, d_series)
         combined_mean_cat = torch.cat([input[:, :-1, :], combined_mean], dim=1)
-        # combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
+        combined_mean_cat = self.dropout(F.gelu(self.output(combined_mean_cat)))
 
         # output = self.dropout(self.output(combined_mean_cat))
 
