@@ -70,6 +70,8 @@ class STAR_Patch(nn.Module):
 
         # [b * n_vars, 1, d_series]
         x_glb = torch.reshape(x_glb, (batch_size, -1, d_series))
+
+        print(x_glb.shape)
         # [b, n_vars, d_series]
         combined_mean = self.dropout(F.gelu(self.gen1(x_glb)))
 
