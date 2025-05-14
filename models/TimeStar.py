@@ -101,9 +101,9 @@ class STAR_Patch(nn.Module):
         combined_mean_cat = torch.cat([input[:, :-1, :], combined_mean], dim=1)
         # combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
 
-        output = self.dropout(self.output(combined_mean_cat))
+        # output = self.dropout(self.output(combined_mean_cat))
 
-        return output, None
+        return combined_mean_cat, None
 
 
 class FlattenHead(nn.Module):
