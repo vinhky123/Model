@@ -59,10 +59,8 @@ class STAR_Patch(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, input, input_raw, *args, **kwargs):
-        batch_size, channels, d_series = input_raw.shape
-
-        print(input.shape)
-        print(input_raw.shape)
+        batch_size, _, channels = input_raw.shape
+        _, _, d_series = input.shape
 
         # set FFN
         # combined_mean = self.dropout(F.gelu(self.gen1(input)))
@@ -72,9 +70,15 @@ class STAR_Patch(nn.Module):
         x_glb = input[:, -1, :].unsqueeze(1)
 
         # [b * n_vars, 1, d_series]
-        x_glb = torch.reshape(x_glb, (batch_size, -1, d_series))
+        x_glb = torch.reshape(
+            x_glb,
+            (
+                batch_size,
+                -1,
+                d_series,
+            ),
+        )
 
-        print(x_glb.shape)
         # [b, n_vars, d_series]
         combined_mean = self.dropout(F.gelu(self.gen1(x_glb)))
 
