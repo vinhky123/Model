@@ -51,7 +51,7 @@ class STAR(nn.Module):
         combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
 
         output = combined_mean_cat[:, :channels, :]
-        output = input + combined_mean_cat
+        output = input + output
 
         return output, None
 
