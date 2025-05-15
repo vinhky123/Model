@@ -17,12 +17,15 @@ class STAR(nn.Module):
         self.gen2 = nn.Linear(d_series, d_core)
         self.gen3 = nn.Linear(d_series + d_core, d_series)
         self.gen4 = nn.Linear(d_series, d_series)
+        self.dropout = nn.Dropout(0.1)
 
-    def forward(self, input, *args, **kwargs):
+    def forward(self, input, ex_input, *args, **kwargs):
         batch_size, channels, d_series = input.shape
 
+        concated_input = torch.cat([input, ex_input], dim=1)
+
         # set FFN
-        combined_mean = F.gelu(self.gen1(input))
+        combined_mean = self.dropout(F.gelu(self.gen1(concated_input)))
         combined_mean = self.gen2(combined_mean)
 
         # stochastic pooling
@@ -45,62 +48,6 @@ class STAR(nn.Module):
         combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
         combined_mean_cat = self.gen4(combined_mean_cat)
         output = combined_mean_cat
-
-        return output, None
-
-
-class STAR_Patch(nn.Module):
-    def __init__(self, d_series, patch_num, d_core):
-        super(STAR_Patch, self).__init__()
-
-        self.gen1 = nn.Linear(d_series, d_series)
-        self.gen2 = nn.Linear(d_series, d_core)
-        self.gen3 = nn.Linear(d_series + d_core, d_series)
-        self.gen4 = nn.Linear(d_series, d_series)
-
-        self.output = nn.Linear(d_series, d_series)
-        self.dropout = nn.Dropout(0.1)
-
-    def forward(self, en_input, ex_input, input_raw, *args, **kwargs):
-        batch_size, channels, d_series = ex_input.shape
-
-        # set FFN
-        # combined_mean = self.dropout(F.gelu(self.gen1(input)))
-        # combined_mean = self.dropout(self.gen2(combined_mean))
-
-        # input shape: [b * n_vars, patch_num + 1, d_model]
-
-        # [b * n_vars, 1, d_series]
-        x_glb = en_input.reshape(batch_size, -1, d_series)
-
-        # [b, n_vars, d_series]
-        combined_mean = self.dropout(F.gelu(self.gen1(ex_input)))
-        combined_mean = self.gen2(combined_mean)
-
-        # stochastic pooling
-        if self.training:
-            ratio = F.softmax(combined_mean, dim=1)
-            ratio = ratio.permute(0, 2, 1)
-            ratio = ratio.reshape(-1, channels)
-            indices = torch.multinomial(ratio, 1)
-            indices = indices.view(batch_size, -1, 1).permute(0, 2, 1)
-            combined_mean = torch.gather(combined_mean, 1, indices)
-            combined_mean = combined_mean.repeat(1, channels, 1)
-        else:
-            weight = F.softmax(combined_mean, dim=1)
-            combined_mean = torch.sum(
-                combined_mean * weight, dim=1, keepdim=True
-            ).repeat(1, channels, 1)
-
-        combined_mean = combined_mean[:, :-4, :]
-
-        # mlp fusion
-        combined_mean_cat = torch.cat([x_glb, combined_mean], -1)
-        combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
-        combined_mean_cat = self.gen4(combined_mean_cat)
-        output = combined_mean_cat + x_glb
-
-        # output = self.dropout(self.output(combined_mean_cat))
 
         return output, None
 
@@ -161,7 +108,6 @@ class Encoder(nn.Module):
             x = layer(
                 x,
                 cross,
-                x_raw,
                 x_mask=x_mask,
                 cross_mask=cross_mask,
                 tau=tau,
@@ -198,10 +144,8 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
 
-    def forward(
-        self, x, cross, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None
-    ):
-        B, L, D = x_raw.shape
+    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
+        B, L, D = cross.shape
         # x shape [b * n_vars, patch_num + 1, d_model]
         x = x + self.dropout(
             self.self_attention(x, x, x, attn_mask=x_mask, tau=tau, delta=None)[0]
@@ -211,16 +155,7 @@ class EncoderLayer(nn.Module):
         x_glb_ori = x[:, -1, :].unsqueeze(1)
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        x_glb_attn = self.dropout(
-            self.cross_attention(
-                x_glb,
-                cross,
-                x_raw,
-                attn_mask=cross_mask,
-                tau=tau,
-                delta=delta,
-            )[0]
-        )
+        x_glb_attn = self.dropout(self.cross_attention(x_glb, cross))
         x_glb_attn = torch.reshape(
             x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
         ).unsqueeze(1)
@@ -274,7 +209,7 @@ class Model(nn.Module):
                         configs.d_model,
                         configs.n_heads,
                     ),
-                    STAR_Patch(configs.d_model, self.patch_num, configs.d_core),
+                    STAR(configs.d_model, configs.d_core),
                     configs.d_model,
                     configs.d_ff,
                     dropout=configs.dropout,
