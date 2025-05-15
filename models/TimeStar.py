@@ -63,24 +63,16 @@ class STAR_Patch(nn.Module):
 
     def forward(self, en_input, ex_input, input_raw, *args, **kwargs):
         batch_size, _, channels = input_raw.shape
-        _, _, d_series = input.shape
+        _, _, d_series = en_input.shape
 
         # set FFN
         # combined_mean = self.dropout(F.gelu(self.gen1(input)))
         # combined_mean = self.dropout(self.gen2(combined_mean))
 
         # input shape: [b * n_vars, patch_num + 1, d_model]
-        x_glb = en_input[:, -1, :].unsqueeze(1)
 
         # [b * n_vars, 1, d_series]
-        x_glb = torch.reshape(
-            x_glb,
-            (
-                batch_size,
-                -1,
-                d_series,
-            ),
-        )
+        x_glb = en_input
 
         # [b, n_vars, d_series]
         combined_mean = self.dropout(F.gelu(self.gen1(ex_input)))
@@ -219,8 +211,8 @@ class EncoderLayer(nn.Module):
         x_glb_attn = self.dropout(
             self.cross_attention(
                 x_glb,
-                cross=cross,
-                x_raw=x_raw,
+                cross,
+                x_raw,
                 attn_mask=cross_mask,
                 tau=tau,
                 delta=delta,
