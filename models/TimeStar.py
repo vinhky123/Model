@@ -23,6 +23,9 @@ class STAR(nn.Module):
         batch_size, channels, d_series = input.shape
 
         concated_input = torch.cat([input, ex_input], dim=1)
+        print(concated_input.shape)
+        print(input.shape)
+        print(ex_input.shape)
 
         # set FFN
         combined_mean = self.dropout(F.gelu(self.gen1(concated_input)))
@@ -45,7 +48,7 @@ class STAR(nn.Module):
 
         # mlp fusion
         combined_mean_cat = torch.cat([input, combined_mean], -1)
-        combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
+        combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
         combined_mean_cat = self.gen4(combined_mean_cat)
         output = combined_mean_cat
 
