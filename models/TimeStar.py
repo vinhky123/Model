@@ -262,7 +262,16 @@ class Model(nn.Module):
         self.encoder = Encoder(
             [
                 EncoderLayer(
-                    STAR(configs.d_model, configs.d_core),
+                    AttentionLayer(
+                        FullAttention(
+                            False,
+                            configs.factor,
+                            attention_dropout=configs.dropout,
+                            output_attention=False,
+                        ),
+                        configs.d_model,
+                        configs.n_heads,
+                    ),
                     STAR_Patch(configs.d_model, self.patch_num, configs.d_core),
                     configs.d_model,
                     configs.d_ff,
