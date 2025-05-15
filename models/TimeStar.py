@@ -62,8 +62,7 @@ class STAR_Patch(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, en_input, ex_input, input_raw, *args, **kwargs):
-        batch_size, _, channels = input_raw.shape
-        _, _, d_series = en_input.shape
+        batch_size, channels, d_series = ex_input.shape
 
         # set FFN
         # combined_mean = self.dropout(F.gelu(self.gen1(input)))
@@ -73,9 +72,6 @@ class STAR_Patch(nn.Module):
 
         # [b * n_vars, 1, d_series]
         x_glb = en_input
-
-        print(x_glb.shape)
-        print(ex_input.shape)
 
         # [b, n_vars, d_series]
         combined_mean = self.dropout(F.gelu(self.gen1(ex_input)))
