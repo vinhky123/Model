@@ -158,7 +158,7 @@ class EncoderLayer(nn.Module):
         x_glb_ori = x[:, -1, :].unsqueeze(1)
         x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        x_glb_attn = self.dropout(self.cross_attention(x_glb, cross))
+        x_glb_attn = self.dropout(self.cross_attention(x_glb, cross)[0])
         x_glb_attn = torch.reshape(
             x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
         ).unsqueeze(1)
