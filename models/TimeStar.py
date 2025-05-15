@@ -74,6 +74,9 @@ class STAR_Patch(nn.Module):
         # [b * n_vars, 1, d_series]
         x_glb = en_input
 
+        print(x_glb.shape)
+        print(ex_input.shape)
+
         # [b, n_vars, d_series]
         combined_mean = self.dropout(F.gelu(self.gen1(ex_input)))
         combined_mean = self.gen2(combined_mean)
