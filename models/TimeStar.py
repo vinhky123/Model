@@ -98,7 +98,7 @@ class STAR_Patch(nn.Module):
         combined_mean_cat = torch.cat([x_glb, combined_mean], -1)
         combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
         combined_mean_cat = self.gen4(combined_mean_cat)
-        output = combined_mean_cat
+        output = combined_mean_cat + x_glb
 
         # output = self.dropout(self.output(combined_mean_cat))
 
