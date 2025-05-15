@@ -20,7 +20,8 @@ class STAR(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, input, ex_input, *args, **kwargs):
-        batch_size, channels, d_series = input.shape
+        batch_size, _, d_series = input.shape
+        channels = ex_input.shape[1] + input.shape[1]
 
         concated_input = torch.cat([input, ex_input], dim=1)
         print(concated_input.shape)
