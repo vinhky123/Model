@@ -71,7 +71,7 @@ class STAR_Patch(nn.Module):
         # input shape: [b * n_vars, patch_num + 1, d_model]
 
         # [b * n_vars, 1, d_series]
-        x_glb = en_input
+        x_glb = en_input.reshape(batch_size, -1, d_series)
 
         # [b, n_vars, d_series]
         combined_mean = self.dropout(F.gelu(self.gen1(ex_input)))
