@@ -24,9 +24,6 @@ class STAR(nn.Module):
         channels = ex_input.shape[1] + input.shape[1]
 
         concated_input = torch.cat([input, ex_input], dim=1)
-        print(concated_input.shape)
-        print(input.shape)
-        print(ex_input.shape)
 
         # set FFN
         combined_mean = self.dropout(F.gelu(self.gen1(concated_input)))
