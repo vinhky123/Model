@@ -203,7 +203,9 @@ class EncoderLayer(nn.Module):
     ):
         B, L, D = x_raw.shape
         # x shape [b * n_vars, patch_num + 1, d_model]
-        x = x + self.dropout(self.self_attention(x)[0])
+        x = x + self.dropout(
+            self.self_attention(x, x, x, attn_mask=x_mask, tau=tau, delta=None)[0]
+        )
         x = self.norm1(x)
 
         x_glb_ori = x[:, -1, :].unsqueeze(1)
