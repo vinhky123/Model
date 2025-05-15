@@ -20,7 +20,7 @@ class STAR(nn.Module):
         self.dropout = nn.Dropout(0.1)
 
     def forward(self, input, ex_input, *args, **kwargs):
-        batch_size, _, d_series = input.shape
+        batch_size, en_channels, d_series = input.shape
         channels = ex_input.shape[1] + input.shape[1]
 
         concated_input = torch.cat([input, ex_input], dim=1)
@@ -43,6 +43,8 @@ class STAR(nn.Module):
             combined_mean = torch.sum(
                 combined_mean * weight, dim=1, keepdim=True
             ).repeat(1, channels, 1)
+
+        input_core = combined_mean[:, :en_channels, :]
 
         # mlp fusion
         combined_mean_cat = torch.cat([input, combined_mean], -1)
