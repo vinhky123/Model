@@ -54,11 +54,14 @@ class STAR_Patch(nn.Module):
         super(STAR_Patch, self).__init__()
 
         self.gen1 = nn.Linear(d_series, d_series)
+        self.gen2 = nn.Linear(d_series, d_core)
+        self.gen3 = nn.Linear(d_series + d_core, d_series)
+        self.gen4 = nn.Linear(d_series, d_series)
 
         self.output = nn.Linear(d_series, d_series)
         self.dropout = nn.Dropout(0.1)
 
-    def forward(self, input, input_raw, *args, **kwargs):
+    def forward(self, en_input, ex_input, input_raw, *args, **kwargs):
         batch_size, _, channels = input_raw.shape
         _, _, d_series = input.shape
 
@@ -67,7 +70,7 @@ class STAR_Patch(nn.Module):
         # combined_mean = self.dropout(self.gen2(combined_mean))
 
         # input shape: [b * n_vars, patch_num + 1, d_model]
-        x_glb = input[:, -1, :].unsqueeze(1)
+        x_glb = en_input[:, -1, :].unsqueeze(1)
 
         # [b * n_vars, 1, d_series]
         x_glb = torch.reshape(
@@ -80,7 +83,8 @@ class STAR_Patch(nn.Module):
         )
 
         # [b, n_vars, d_series]
-        combined_mean = self.dropout(F.gelu(self.gen1(x_glb)))
+        combined_mean = self.dropout(F.gelu(self.gen1(ex_input)))
+        combined_mean = self.gen2(combined_mean)
 
         # stochastic pooling
         if self.training:
@@ -97,13 +101,15 @@ class STAR_Patch(nn.Module):
                 combined_mean * weight, dim=1, keepdim=True
             ).repeat(1, channels, 1)
 
-        combined_mean = combined_mean.reshape(-1, 1, d_series)
-        combined_mean_cat = torch.cat([input[:, :-1, :], combined_mean], dim=1)
-        combined_mean_cat = self.dropout(F.gelu(self.output(combined_mean_cat)))
+        # mlp fusion
+        combined_mean_cat = torch.cat([x_glb, combined_mean], -1)
+        combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
+        combined_mean_cat = self.gen4(combined_mean_cat)
+        output = combined_mean_cat
 
         # output = self.dropout(self.output(combined_mean_cat))
 
-        return combined_mean_cat, None
+        return output, None
 
 
 class FlattenHead(nn.Module):
@@ -155,10 +161,18 @@ class Encoder(nn.Module):
         self.norm = norm_layer
         self.projection = projection
 
-    def forward(self, x, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None):
+    def forward(
+        self, x, cross, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None
+    ):
         for layer in self.layers:
             x = layer(
-                x, x_raw, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta
+                x,
+                cross,
+                x_raw,
+                x_mask=x_mask,
+                cross_mask=cross_mask,
+                tau=tau,
+                delta=delta,
             )
 
         if self.norm is not None:
@@ -191,30 +205,34 @@ class EncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
 
-    def forward(self, x, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None):
+    def forward(
+        self, x, cross, x_raw, x_mask=None, cross_mask=None, tau=None, delta=None
+    ):
         B, L, D = x_raw.shape
         # x shape [b * n_vars, patch_num + 1, d_model]
         x = x + self.dropout(self.self_attention(x)[0])
         x = self.norm1(x)
 
-        x_attn = self.dropout(self.cross_attention(x, x_raw)[0])
-        y = x + x_attn
+        x_glb_ori = x[:, -1, :].unsqueeze(1)
+        x_glb = torch.reshape(x_glb_ori, (B, -1, D))
 
-        # x_glb_ori = x[:, -1, :].unsqueeze(1)
-        # x_glb = torch.reshape(x_glb_ori, (B, -1, D))
+        x_glb_attn = self.dropout(
+            self.cross_attention(
+                x_glb,
+                cross=cross,
+                x_raw=x_raw,
+                attn_mask=cross_mask,
+                tau=tau,
+                delta=delta,
+            )[0]
+        )
+        x_glb_attn = torch.reshape(
+            x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
+        ).unsqueeze(1)
+        x_glb = x_glb_ori + x_glb_attn
+        x_glb = self.norm2(x_glb)
 
-        # x_glb_attn = self.dropout(
-        #        self.cross_attention(
-        #            x_glb, cross=cross, attn_mask=cross_mask, tau=tau, delta=delta
-        #        )[0]
-        #    )
-        # x_glb_attn = torch.reshape(
-        #    x_glb_attn, (x_glb_attn.shape[0] * x_glb_attn.shape[1], x_glb_attn.shape[2])
-        # ).unsqueeze(1)
-        # x_glb = x_glb_ori + x_glb_attn
-        # x_glb = self.norm2(x_glb)
-
-        # y = x = torch.cat([x[:, :-1, :], x_glb], dim=1)
+        y = x = torch.cat([x[:, :-1, :], x_glb], dim=1)
 
         y = self.dropout(self.activation(self.conv1(y.transpose(-1, 1))))
         y = self.dropout(self.conv2(y).transpose(-1, 1))
@@ -280,8 +298,9 @@ class Model(nn.Module):
         _, _, N = x_enc.shape
 
         en_embed, n_vars = self.en_embedding(x_enc.permute(0, 2, 1))
+        ex_embed = self.ex_embedding(x_enc, x_mark_enc)
 
-        enc_out = self.encoder(en_embed, x_enc)
+        enc_out = self.encoder(en_embed, ex_embed, x_enc)
         enc_out = torch.reshape(
             enc_out, (-1, n_vars, enc_out.shape[-2], enc_out.shape[-1])
         )
