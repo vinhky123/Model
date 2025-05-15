@@ -92,6 +92,8 @@ class STAR_Patch(nn.Module):
                 combined_mean * weight, dim=1, keepdim=True
             ).repeat(1, channels, 1)
 
+        combined_mean = combined_mean[:, :-4, :]
+
         # mlp fusion
         combined_mean_cat = torch.cat([x_glb, combined_mean], -1)
         combined_mean_cat = F.gelu(self.gen3(combined_mean_cat))
