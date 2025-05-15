@@ -47,7 +47,7 @@ class STAR(nn.Module):
         input_core = combined_mean[:, :en_channels, :]
 
         # mlp fusion
-        combined_mean_cat = torch.cat([input, combined_mean], -1)
+        combined_mean_cat = torch.cat([input, input_core], -1)
         combined_mean_cat = self.dropout(F.gelu(self.gen3(combined_mean_cat)))
         combined_mean_cat = self.gen4(combined_mean_cat)
         output = combined_mean_cat
