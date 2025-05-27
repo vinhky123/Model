@@ -78,7 +78,7 @@ if __name__ == "__main__":
         help="location of model checkpoints",
     )
 
-    parser.add_argument("--J", type=str, default="1", help="Number of J in Jumpo CLS")
+    parser.add_argument("--J", type=int, default=1, help="Number of J in Jumpo CLS")
 
     # forecasting task
     parser.add_argument("--seq_len", type=int, default=96, help="input sequence length")
