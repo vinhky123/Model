@@ -159,7 +159,7 @@ class Model(nn.Module):
         self.patch_num = int(configs.seq_len // configs.patch_len)
         self.n_vars = 1 if configs.features == "MS" else configs.enc_in
         # Thêm tham số cho Jumbo token
-        self.J = getattr(configs, "J", 1)  # Mặc định J=1 nếu không có trong configs
+        self.J = configs.J
         self.jumbo_mlp_ratio = getattr(configs, "jumbo_mlp_ratio", 4.0)  # Mặc định 4.0
 
         # Embedding với J
