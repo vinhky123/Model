@@ -89,7 +89,7 @@ class Model(nn.Module):
             [TimesBlock(configs) for _ in range(configs.e_layers)]
         )
         self.enc_embedding = DataEmbedding_inverted(
-            configs.enc_in,
+            configs.seq_len,
             configs.d_model,
             configs.embed,
             configs.freq,
