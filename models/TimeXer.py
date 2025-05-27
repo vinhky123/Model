@@ -50,6 +50,27 @@ class EnEmbedding(nn.Module):
         return self.dropout(x), n_vars
 
 
+class Encoder(nn.Module):
+    def __init__(self, layers, norm_layer=None, projection=None):
+        super(Encoder, self).__init__()
+        self.layers = nn.ModuleList(layers)
+        self.norm = norm_layer
+        self.projection = projection
+
+    def forward(self, x, cross, x_mask=None, cross_mask=None, tau=None, delta=None):
+        for layer in self.layers:
+            x = layer(
+                x, cross, x_mask=x_mask, cross_mask=cross_mask, tau=tau, delta=delta
+            )
+
+        if self.norm is not None:
+            x = self.norm(x)
+
+        if self.projection is not None:
+            x = self.projection(x)
+        return x
+
+
 class EncoderLayer(nn.Module):
     def __init__(
         self,
