@@ -204,7 +204,7 @@ class Model(nn.Module):
             [
                 EncoderLayer(
                     AttentionLayer(
-                        FlashAttention(
+                        FullAttention(
                             False,
                             configs.factor,
                             attention_dropout=configs.dropout,
