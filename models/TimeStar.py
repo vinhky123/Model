@@ -1,3 +1,4 @@
+from layers.AdvancedAttention import FlashAttention
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -203,7 +204,7 @@ class Model(nn.Module):
             [
                 EncoderLayer(
                     AttentionLayer(
-                        FullAttention(
+                        FlashAttention(
                             False,
                             configs.factor,
                             attention_dropout=configs.dropout,
