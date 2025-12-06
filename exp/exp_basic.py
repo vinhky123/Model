@@ -3,7 +3,7 @@ import torch
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
-    WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter, Sundial, TimeMoE, Moirai, TiRex,\
+    WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter, Sundial, TimeMoE, Moirai \
     TimesFM, Toto
 
 
@@ -46,7 +46,6 @@ class Exp_Basic(object):
             'Sundial': Sundial,
             'TimeMoE': TimeMoE,
             'Moirai': Moirai,
-            'TiRex': TiRex,
             'TimesFM': TimesFM,
             'Toto': Toto,
         }
