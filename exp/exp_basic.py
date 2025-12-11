@@ -3,7 +3,7 @@ import torch
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
-    WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter, Sundial, TimeMoE, TimeStar, LSTM
+    WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter, Sundial, TimeMoE, TimeStar, LSTM, ARIMA, SARIMAX
 
 
 class Exp_Basic(object):
@@ -45,7 +45,9 @@ class Exp_Basic(object):
             'Sundial': Sundial,
             'TimeMoE': TimeMoE,
             'TimeStar': TimeStar,
-            'LSTM': LSTM
+            'LSTM': LSTM,
+            'ARIMA': ARIMA,
+            'SARIMAX': SARIMAX
         }
         if args.model == 'Mamba':
             print('Please make sure you have successfully installed mamba_ssm')
