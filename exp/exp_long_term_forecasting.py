@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 from utils.dtw_metric import dtw, accelerated_dtw
 from utils.augmentation import run_augmentation, run_augmentation_single
+import csv
 
 warnings.filterwarnings('ignore')
 
@@ -264,8 +265,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         f.close()
         
         # Save to CSV file for easy comparison
-        import csv
-        import os
+
         csv_file = 'result_summary.csv'
         file_exists = os.path.isfile(csv_file)
         
