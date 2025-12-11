@@ -37,6 +37,8 @@ if __name__ == '__main__':
     parser.add_argument('--freq', type=str, default='h',
                         help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
     parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+    parser.add_argument('--channel_reduction_ratio', type=float, default=0.0, 
+                        help='percentage of channels to remove (0-100), 0 means no reduction, 100 means remove all but 1 channel')
 
     # forecasting task
     parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
@@ -177,6 +179,22 @@ if __name__ == '__main__':
 
     print('Args in experiment:')
     print_args(args)
+    
+    # Apply channel reduction to model dimensions if specified
+    if args.channel_reduction_ratio > 0:
+        reduction_ratio = min(args.channel_reduction_ratio / 100.0, 0.99)
+        if args.features == 'MS':
+            # MS mode: keep target, so reduced_channels = (n-1) * (1-ratio) + 1
+            num_features = max(1, int((args.enc_in - 1) * (1 - reduction_ratio)))
+            args.enc_in = num_features + 1
+            args.dec_in = num_features + 1
+            # c_out remains 1 for MS mode (already set by user)
+        else:
+            # M or S mode: normal reduction
+            reduced_channels = max(1, int(args.enc_in * (1 - reduction_ratio)))
+            args.enc_in = reduced_channels
+            args.dec_in = reduced_channels
+            args.c_out = reduced_channels
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast

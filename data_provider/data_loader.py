@@ -77,6 +77,33 @@ class Dataset_ETT_hour(Dataset):
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values
+        
+        # Apply channel reduction if specified
+        if hasattr(self.args, 'channel_reduction_ratio') and self.args.channel_reduction_ratio > 0:
+            original_channels = data.shape[1]
+            reduction_ratio = min(self.args.channel_reduction_ratio / 100.0, 0.99)  # Clip to [0, 0.99]
+            
+            if self.features == 'MS':
+                # Multivariate to Single: must keep target (last column)
+                num_features_to_keep = max(1, int((original_channels - 1) * (1 - reduction_ratio)))
+                data = np.concatenate([data[:, :num_features_to_keep], data[:, -1:]], axis=1)
+                num_channels_to_keep = num_features_to_keep + 1
+            else:
+                # M or S mode: normal reduction
+                num_channels_to_keep = max(1, int(original_channels * (1 - reduction_ratio)))
+                data = data[:, :num_channels_to_keep]
+            
+            # Update scaler to match reduced dimensions
+            if self.scale:
+                old_mean = self.scaler.mean_[:num_channels_to_keep]
+                old_scale = self.scaler.scale_[:num_channels_to_keep]
+                self.scaler = StandardScaler()
+                self.scaler.mean_ = old_mean
+                self.scaler.scale_ = old_scale
+                self.scaler.n_features_in_ = num_channels_to_keep
+            
+            if self.set_type == 0:  # Only print for training set
+                print(f"Channel reduced: {original_channels} -> {num_channels_to_keep}")
 
         df_stamp = df_raw[['date']][border1:border2]
         df_stamp['date'] = pd.to_datetime(df_stamp.date)
