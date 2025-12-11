@@ -254,12 +254,36 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         mae, mse, rmse, mape, mspe = metric(preds, trues)
         print('mse:{}, mae:{}, dtw:{}'.format(mse, mae, dtw))
+        
+        # Save to text file
         f = open("result_long_term_forecast.txt", 'a')
         f.write(setting + "  \n")
         f.write('mse:{}, mae:{}, dtw:{}'.format(mse, mae, dtw))
         f.write('\n')
         f.write('\n')
         f.close()
+        
+        # Save to CSV file for easy comparison
+        import csv
+        import os
+        csv_file = 'result_summary.csv'
+        file_exists = os.path.isfile(csv_file)
+        
+        with open(csv_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['model', 'dataset', 'seq_len', 'pred_len', 'mae', 'mse', 'rmse', 'mape', 'mspe'])
+            writer.writerow([
+                self.args.model,
+                self.args.data,
+                self.args.seq_len,
+                self.args.pred_len,
+                f'{mae:.4f}',
+                f'{mse:.4f}',
+                f'{rmse:.4f}',
+                f'{mape:.4f}',
+                f'{mspe:.4f}'
+            ])
 
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
         np.save(folder_path + 'pred.npy', preds)
