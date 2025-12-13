@@ -114,6 +114,10 @@ if __name__ == '__main__':
     # metrics (dtw)
     parser.add_argument('--use_dtw', type=bool, default=False,
                         help='the controller of using dtw metric (dtw is time consuming, not suggested unless necessary)')
+    
+    # benchmark
+    parser.add_argument('--benchmark', action='store_true', default=False,
+                        help='enable inference speed benchmarking (throughput, latency)')
 
     # Augmentation
     parser.add_argument('--augmentation_ratio', type=int, default=0, help="How many times to augment")

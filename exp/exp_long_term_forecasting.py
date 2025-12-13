@@ -84,6 +84,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             os.makedirs(path)
 
         time_now = time.time()
+        
+        # Track training time
+        train_start_time = time.time()
+        epoch_times = []
 
         train_steps = len(train_loader)
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
@@ -147,7 +151,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                     loss.backward()
                     model_optim.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            epoch_duration = time.time() - epoch_time
+            epoch_times.append(epoch_duration)
+            print("Epoch: {} cost time: {:.2f}s".format(epoch + 1, epoch_duration))
+            
             train_loss = np.average(train_loss)
             vali_loss = self.vali(vali_data, vali_loader, criterion)
             test_loss = self.vali(test_data, test_loader, criterion)
@@ -161,11 +168,98 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             adjust_learning_rate(model_optim, epoch + 1, self.args)
 
+        # Calculate training statistics
+        total_train_time = time.time() - train_start_time
+        avg_epoch_time = np.mean(epoch_times)
+        total_samples = len(train_data) * len(epoch_times)
+        train_throughput = total_samples / total_train_time
+        
+        print("\n" + "="*80)
+        print("Training Statistics:")
+        print(f"  Total training time:   {total_train_time:.2f}s ({total_train_time/60:.2f}min)")
+        print(f"  Number of epochs:      {len(epoch_times)}")
+        print(f"  Avg time per epoch:    {avg_epoch_time:.2f}s")
+        print(f"  Training throughput:   {train_throughput:.2f} samples/sec")
+        print("="*80 + "\n")
+        
+        # Store training stats for later use in test()
+        self.train_stats = {
+            'total_time': total_train_time,
+            'avg_epoch_time': avg_epoch_time,
+            'num_epochs': len(epoch_times),
+            'throughput': train_throughput
+        }
+
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
 
+    def benchmark_inference(self, test_loader, n_warmup=10, n_test=100):
+        """
+        Benchmark pure inference speed (forward pass only)
+        """
+        import time
+        
+        self.model.eval()
+        
+        # Warm-up phase
+        print("Warming up GPU...")
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+                if i >= n_warmup:
+                    break
+                batch_x = batch_x.float().to(self.device)
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                batch_y_mark = batch_y_mark.float().to(self.device)
+                
+                _ = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+        
+        # Benchmark
+        print(f"Benchmarking on {n_test} batches...")
+        inference_times = []
+        total_samples = 0
+        
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(test_loader):
+                if i >= n_test:
+                    break
+                    
+                batch_x = batch_x.float().to(self.device)
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                batch_y_mark = batch_y_mark.float().to(self.device)
+                
+                # Timing
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                start_time = time.time()
+                
+                _ = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                end_time = time.time()
+                
+                inference_times.append(end_time - start_time)
+                total_samples += batch_x.size(0)
+        
+        inference_times = np.array(inference_times)
+        
+        return {
+            'mean_time': inference_times.mean(),
+            'std_time': inference_times.std(),
+            'throughput': total_samples / inference_times.sum(),
+            'latency': inference_times.sum() / total_samples * 1000,
+            'total_samples': total_samples
+        }
+    
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
         if test:
@@ -269,10 +363,39 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         csv_file = 'result_summary.csv'
         file_exists = os.path.isfile(csv_file)
         
+        # Get model params
+        total_params = sum(p.numel() for p in self.model.parameters())
+        
+        # Benchmark inference speed if enabled
+        inference_time_ms = 'N/A'
+        throughput = 'N/A'
+        latency_ms = 'N/A'
+        
+        if hasattr(self.args, 'benchmark') and self.args.benchmark:
+            print("\n" + "="*80)
+            print("Benchmarking Inference Speed...")
+            print("="*80)
+            
+            benchmark_results = self.benchmark_inference(test_loader, n_warmup=10, n_test=100)
+            
+            inference_time_ms = f'{benchmark_results["mean_time"]*1000:.2f}'
+            throughput = f'{benchmark_results["throughput"]:.2f}'
+            latency_ms = f'{benchmark_results["latency"]:.2f}'
+            
+            print(f"\n📊 Inference Speed:")
+            print(f"  Time per batch:  {benchmark_results['mean_time']*1000:.2f} ms")
+            print(f"  Throughput:      {benchmark_results['throughput']:.2f} samples/sec")
+            print(f"  Latency:         {benchmark_results['latency']:.2f} ms/sample")
+            print("="*80 + "\n")
+        
         with open(csv_file, 'a', newline='') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(['model', 'dataset', 'seq_len', 'pred_len', 'mae', 'mse', 'rmse', 'mape', 'mspe'])
+                writer.writerow([
+                    'model', 'dataset', 'seq_len', 'pred_len', 
+                    'mae', 'mse', 'rmse', 'mape', 'mspe',
+                    'params_M', 'inference_ms', 'throughput', 'latency_ms'
+                ])
             writer.writerow([
                 self.args.model,
                 self.args.data,
@@ -282,7 +405,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 f'{mse:.4f}',
                 f'{rmse:.4f}',
                 f'{mape:.4f}',
-                f'{mspe:.4f}'
+                f'{mspe:.4f}',
+                f'{total_params/1e6:.2f}',
+                inference_time_ms,
+                throughput,
+                latency_ms
             ])
 
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
