@@ -366,9 +366,19 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # Get model params
         total_params = sum(p.numel() for p in self.model.parameters())
         
+        # Get training stats (if available from train())
+        train_time_s = 'N/A'
+        avg_epoch_time_s = 'N/A'
+        train_throughput = 'N/A'
+        
+        if hasattr(self, 'train_stats'):
+            train_time_s = f'{self.train_stats["total_time"]:.2f}'
+            avg_epoch_time_s = f'{self.train_stats["avg_epoch_time"]:.2f}'
+            train_throughput = f'{self.train_stats["throughput"]:.2f}'
+        
         # Benchmark inference speed if enabled
         inference_time_ms = 'N/A'
-        throughput = 'N/A'
+        inference_throughput = 'N/A'
         latency_ms = 'N/A'
         
         if hasattr(self.args, 'benchmark') and self.args.benchmark:
@@ -379,7 +389,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             benchmark_results = self.benchmark_inference(test_loader, n_warmup=10, n_test=100)
             
             inference_time_ms = f'{benchmark_results["mean_time"]*1000:.2f}'
-            throughput = f'{benchmark_results["throughput"]:.2f}'
+            inference_throughput = f'{benchmark_results["throughput"]:.2f}'
             latency_ms = f'{benchmark_results["latency"]:.2f}'
             
             print(f"\n📊 Inference Speed:")
@@ -394,7 +404,8 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 writer.writerow([
                     'model', 'dataset', 'seq_len', 'pred_len', 
                     'mae', 'mse', 'rmse', 'mape', 'mspe',
-                    'params_M', 'inference_ms', 'throughput', 'latency_ms'
+                    'params_M', 'train_time_s', 'avg_epoch_time_s', 'train_throughput_samples_sec',
+                    'inference_ms', 'inference_throughput', 'latency_ms'
                 ])
             writer.writerow([
                 self.args.model,
@@ -407,8 +418,11 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 f'{mape:.4f}',
                 f'{mspe:.4f}',
                 f'{total_params/1e6:.2f}',
+                train_time_s,
+                avg_epoch_time_s,
+                train_throughput,
                 inference_time_ms,
-                throughput,
+                inference_throughput,
                 latency_ms
             ])
 
