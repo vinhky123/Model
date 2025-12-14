@@ -32,6 +32,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
+        # Statistical models (ARIMA, SARIMAX) don't have trainable parameters
+        if self.args.model in ['ARIMA', 'SARIMAX']:
+            return None
         model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
@@ -82,6 +85,21 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
+
+        # Statistical models (ARIMA, SARIMAX) don't require training
+        # They fit during inference
+        if self.args.model in ['ARIMA', 'SARIMAX']:
+            print(f"\n⚠️  {self.args.model} is a statistical model - no training required.")
+            print("Model will fit during inference on test data.\n")
+            
+            # Store dummy training stats for consistency
+            self.train_stats = {
+                'total_time': 0.0,
+                'avg_epoch_time': 0.0,
+                'num_epochs': 0,
+                'throughput': 0.0
+            }
+            return self.model
 
         time_now = time.time()
         
@@ -262,7 +280,9 @@ class Exp_Long_Term_Forecast(Exp_Basic):
     
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
-        if test:
+        
+        # Statistical models don't have checkpoints to load
+        if test and self.args.model not in ['ARIMA', 'SARIMAX']:
             print('loading model')
             self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
 
