@@ -366,6 +366,23 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         # Get model params
         total_params = sum(p.numel() for p in self.model.parameters())
         
+        # Get dataset name (use actual name instead of "custom")
+        dataset_name = self.args.data
+        if dataset_name == 'custom':
+            # Extract name from data_path
+            data_file = os.path.basename(self.args.data_path)
+            if 'electricity' in data_file.lower():
+                dataset_name = 'ECL'
+            elif 'weather' in data_file.lower():
+                dataset_name = 'Weather'
+            elif 'traffic' in data_file.lower():
+                dataset_name = 'Traffic'
+            elif 'exchange' in data_file.lower():
+                dataset_name = 'Exchange'
+            else:
+                # Use filename without extension as fallback
+                dataset_name = os.path.splitext(data_file)[0]
+        
         # Get training stats (if available from train())
         train_time_s = 'N/A'
         avg_epoch_time_s = 'N/A'
@@ -409,7 +426,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 ])
             writer.writerow([
                 self.args.model,
-                self.args.data,
+                dataset_name,
                 self.args.seq_len,
                 self.args.pred_len,
                 f'{mae:.4f}',
