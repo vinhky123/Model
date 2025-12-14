@@ -108,6 +108,17 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         epoch_times = []
 
         train_steps = len(train_loader)
+        
+        # Training speed benchmark mode: quick training for speed measurement
+        if self.args.train_speed_benchmark:
+            benchmark_epochs = 3  # Epoch 0: warm-up, Epoch 1-2: measurement
+            print(f"\n🚀 TRAINING SPEED BENCHMARK MODE")
+            print(f"   Training {benchmark_epochs} epochs (1 warm-up + 2 measurement)")
+            print(f"   Skipping validation, early stopping, and testing")
+            print(f"   Model: {self.args.model} | Dataset: {self.args.data} | Batch size: {self.args.batch_size}\n")
+        else:
+            benchmark_epochs = self.args.train_epochs
+        
         early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
 
         model_optim = self._select_optimizer()
@@ -116,7 +127,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
-        for epoch in range(self.args.train_epochs):
+        for epoch in range(benchmark_epochs):
             iter_count = 0
             train_loss = []
 
@@ -171,47 +182,107 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
             epoch_duration = time.time() - epoch_time
             epoch_times.append(epoch_duration)
-            print("Epoch: {} cost time: {:.2f}s".format(epoch + 1, epoch_duration))
+            
+            # Calculate iterations per second
+            iters_per_sec = train_steps / epoch_duration
+            samples_per_sec = len(train_data) / epoch_duration
+            
+            if self.args.train_speed_benchmark:
+                # In benchmark mode, show detailed speed metrics
+                epoch_status = "WARM-UP" if epoch == 0 else "MEASUREMENT"
+                print(f"Epoch {epoch + 1} [{epoch_status}]: {epoch_duration:.2f}s | "
+                      f"{iters_per_sec:.2f} iters/s | {samples_per_sec:.2f} samples/s")
+            else:
+                print("Epoch: {} cost time: {:.2f}s".format(epoch + 1, epoch_duration))
             
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+            
+            # Skip validation and early stopping in benchmark mode
+            if not self.args.train_speed_benchmark:
+                vali_loss = self.vali(vali_data, vali_loader, criterion)
+                test_loss = self.vali(test_data, test_loader, criterion)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(vali_loss, self.model, path)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+                early_stopping(vali_loss, self.model, path)
+                if early_stopping.early_stop:
+                    print("Early stopping")
+                    break
 
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
+                adjust_learning_rate(model_optim, epoch + 1, self.args)
 
         # Calculate training statistics
         total_train_time = time.time() - train_start_time
-        avg_epoch_time = np.mean(epoch_times)
-        total_samples = len(train_data) * len(epoch_times)
-        train_throughput = total_samples / total_train_time
         
-        print("\n" + "="*80)
-        print("Training Statistics:")
-        print(f"  Total training time:   {total_train_time:.2f}s ({total_train_time/60:.2f}min)")
-        print(f"  Number of epochs:      {len(epoch_times)}")
-        print(f"  Avg time per epoch:    {avg_epoch_time:.2f}s")
-        print(f"  Training throughput:   {train_throughput:.2f} samples/sec")
-        print("="*80 + "\n")
-        
-        # Store training stats for later use in test()
-        self.train_stats = {
-            'total_time': total_train_time,
-            'avg_epoch_time': avg_epoch_time,
-            'num_epochs': len(epoch_times),
-            'throughput': train_throughput
-        }
+        # In benchmark mode, calculate stable metrics (skip warm-up epoch)
+        if self.args.train_speed_benchmark and len(epoch_times) >= 2:
+            measurement_epochs = epoch_times[1:]  # Skip first epoch (warm-up)
+            avg_epoch_time = np.mean(measurement_epochs)
+            std_epoch_time = np.std(measurement_epochs)
+            total_samples = len(train_data) * len(measurement_epochs)
+            train_throughput = total_samples / sum(measurement_epochs)
+            iters_per_sec = train_steps / avg_epoch_time
+            
+            print("\n" + "="*100)
+            print("🏁 TRAINING SPEED BENCHMARK RESULTS")
+            print("="*100)
+            print(f"Model:              {self.args.model}")
+            print(f"Dataset:            {self.args.data} ({self.args.data_path})")
+            print(f"Features:           {self.args.features} mode")
+            print(f"Batch size:         {self.args.batch_size}")
+            print(f"Input channels:     {self.args.enc_in}")
+            print(f"Sequence length:    {self.args.seq_len}")
+            print(f"Prediction length:  {self.args.pred_len}")
+            print("-"*100)
+            print(f"Training samples:   {len(train_data)}")
+            print(f"Steps per epoch:    {train_steps}")
+            print(f"Total epochs:       {len(epoch_times)} (1 warm-up + {len(measurement_epochs)} measurement)")
+            print("-"*100)
+            print(f"Avg epoch time:     {avg_epoch_time:.3f}s ± {std_epoch_time:.3f}s")
+            print(f"Throughput:         {train_throughput:.2f} samples/sec")
+            print(f"                    {iters_per_sec:.2f} iterations/sec")
+            print(f"Time per sample:    {(avg_epoch_time / len(train_data)) * 1000:.2f}ms")
+            print(f"Time per batch:     {(avg_epoch_time / train_steps) * 1000:.2f}ms")
+            print("="*100 + "\n")
+            
+            # Store stats
+            self.train_stats = {
+                'total_time': sum(measurement_epochs),
+                'avg_epoch_time': avg_epoch_time,
+                'std_epoch_time': std_epoch_time,
+                'num_epochs': len(measurement_epochs),
+                'throughput': train_throughput,
+                'iters_per_sec': iters_per_sec
+            }
+            
+            # Return early - no testing needed in benchmark mode
+            return self.model
+        else:
+            # Normal training mode
+            avg_epoch_time = np.mean(epoch_times)
+            total_samples = len(train_data) * len(epoch_times)
+            train_throughput = total_samples / total_train_time
+            
+            print("\n" + "="*80)
+            print("Training Statistics:")
+            print(f"  Total training time:   {total_train_time:.2f}s ({total_train_time/60:.2f}min)")
+            print(f"  Number of epochs:      {len(epoch_times)}")
+            print(f"  Avg time per epoch:    {avg_epoch_time:.2f}s")
+            print(f"  Training throughput:   {train_throughput:.2f} samples/sec")
+            print("="*80 + "\n")
+            
+            # Store training stats for later use in test()
+            self.train_stats = {
+                'total_time': total_train_time,
+                'avg_epoch_time': avg_epoch_time,
+                'num_epochs': len(epoch_times),
+                'throughput': train_throughput
+            }
+            
+            best_model_path = path + '/' + 'checkpoint.pth'
+            self.model.load_state_dict(torch.load(best_model_path))
 
-        best_model_path = path + '/' + 'checkpoint.pth'
-        self.model.load_state_dict(torch.load(best_model_path))
-
-        return self.model
+            return self.model
 
     def benchmark_inference(self, test_loader, n_warmup=10, n_test=100):
         """

@@ -118,6 +118,8 @@ if __name__ == '__main__':
     # benchmark
     parser.add_argument('--benchmark', action='store_true', default=False,
                         help='enable inference speed benchmarking (throughput, latency)')
+    parser.add_argument('--train_speed_benchmark', action='store_true', default=False,
+                        help='enable training speed benchmarking mode (trains only 3 epochs, skips validation/testing)')
 
     # Augmentation
     parser.add_argument('--augmentation_ratio', type=int, default=0, help="How many times to augment")
@@ -241,8 +243,13 @@ if __name__ == '__main__':
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
             exp.train(setting)
 
-            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            exp.test(setting)
+            # Skip testing in training speed benchmark mode
+            if not args.train_speed_benchmark:
+                print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+                exp.test(setting)
+            else:
+                print('Skipping testing (training speed benchmark mode)')
+                
             if args.gpu_type == 'mps':
                 torch.backends.mps.empty_cache()
             elif args.gpu_type == 'cuda':
