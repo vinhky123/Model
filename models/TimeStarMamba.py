@@ -25,10 +25,23 @@ class STAR_patch(nn.Module):
         # set FFN
         combined_mean = self.dropout(F.gelu(self.gen1(concated_input)))
         combined_mean = self.gen2(combined_mean)
+        
+        # Clamp to prevent NaN/Inf before softmax
+        combined_mean = torch.clamp(combined_mean, min=-10, max=10)
 
         # stochastic pooling
         if self.training:
             ratio = F.softmax(combined_mean, dim=1)
+            
+            # Check and handle NaN/Inf
+            if torch.isnan(ratio).any() or torch.isinf(ratio).any():
+                print("Warning: NaN/Inf detected in ratio, using uniform distribution")
+                ratio = torch.ones_like(ratio) / ratio.shape[1]
+            
+            # Ensure positive values and proper normalization
+            ratio = torch.clamp(ratio, min=1e-8)
+            ratio = ratio / ratio.sum(dim=1, keepdim=True)
+            
             ratio = ratio.permute(0, 2, 1)
             ratio = ratio.reshape(-1, channels)
             indices = torch.multinomial(ratio, 1)
@@ -63,6 +76,8 @@ class MambaLayer(nn.Module):
         d_inner = configs.d_model * configs.expand
         dt_rank = math.ceil(configs.d_model / 16)
         self.mamba = MambaBlock(configs, d_inner, dt_rank)
+        # Add LayerNorm for stability
+        self.norm = nn.LayerNorm(configs.d_model)
         
     def forward(self, q, k, v, attn_mask=None, tau=None, delta=None):
         """
@@ -71,6 +86,9 @@ class MambaLayer(nn.Module):
         Returns: (output, None) to match attention output format
         """
         output = self.mamba(q)  # Use q as input (q==k==v for self-attention)
+        # Normalize and clamp to prevent numerical instability
+        output = self.norm(output)
+        output = torch.clamp(output, min=-10, max=10)
         return output, None
 
 
