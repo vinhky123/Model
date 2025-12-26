@@ -120,6 +120,8 @@ if __name__ == '__main__':
                         help='enable inference speed benchmarking (throughput, latency)')
     parser.add_argument('--train_speed_benchmark', action='store_true', default=False,
                         help='enable training speed benchmarking mode (trains only 3 epochs, skips validation/testing)')
+    parser.add_argument('--cpu_inference_benchmark', action='store_true', default=False,
+                        help='after training on GPU, move model to CPU and benchmark inference latency')
 
     # Augmentation
     parser.add_argument('--augmentation_ratio', type=int, default=0, help="How many times to augment")
@@ -242,6 +244,50 @@ if __name__ == '__main__':
 
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
             exp.train(setting)
+
+            # CPU inference benchmark (if enabled)
+            if args.cpu_inference_benchmark and args.use_gpu:
+                test_data, test_loader = exp._get_data(flag='test')
+                cpu_results = exp.benchmark_cpu_inference(test_loader)
+                
+                # Save CPU benchmark results to file
+                import csv
+                csv_file = 'cpu_inference_benchmark.csv'
+                file_exists = os.path.isfile(csv_file)
+                
+                with open(csv_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    if not file_exists:
+                        writer.writerow([
+                            'model', 'dataset', 'seq_len', 'pred_len', 
+                            'batch_size', 'inference_time_ms', 'latency_per_sample_ms', 'throughput_samples_per_sec'
+                        ])
+                    
+                    # Get dataset name
+                    dataset_name = args.data
+                    if dataset_name == 'custom':
+                        data_file = os.path.basename(args.data_path)
+                        if 'electricity' in data_file.lower():
+                            dataset_name = 'ECL'
+                        elif 'weather' in data_file.lower():
+                            dataset_name = 'Weather'
+                        elif 'traffic' in data_file.lower():
+                            dataset_name = 'Traffic'
+                        else:
+                            dataset_name = os.path.splitext(data_file)[0]
+                    
+                    writer.writerow([
+                        args.model,
+                        dataset_name,
+                        args.seq_len,
+                        args.pred_len,
+                        cpu_results['batch_size'],
+                        f"{cpu_results['inference_time_ms']:.2f}",
+                        f"{cpu_results['latency_per_sample_ms']:.2f}",
+                        f"{cpu_results['throughput_samples_per_sec']:.2f}"
+                    ])
+                
+                print(f"CPU benchmark results saved to {csv_file}")
 
             # Skip testing in training speed benchmark mode
             if not args.train_speed_benchmark:

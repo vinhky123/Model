@@ -349,6 +349,80 @@ class Exp_Long_Term_Forecast(Exp_Basic):
             'total_samples': total_samples
         }
     
+    def benchmark_cpu_inference(self, test_loader, batch_size=32):
+        """
+        Benchmark CPU inference latency on a single batch
+        Move model to CPU and measure inference time
+        """
+        import time
+        
+        print("\n" + "="*80)
+        print("🖥️  CPU INFERENCE BENCHMARK")
+        print("="*80)
+        
+        # Move model to CPU
+        original_device = next(self.model.parameters()).device
+        print(f"Moving model from {original_device} to CPU...")
+        
+        # Handle DataParallel wrapper
+        if isinstance(self.model, nn.DataParallel):
+            model_cpu = self.model.module.cpu()
+        else:
+            model_cpu = self.model.cpu()
+        
+        model_cpu.eval()
+        
+        # Get one batch from test loader
+        batch_x, batch_y, batch_x_mark, batch_y_mark = next(iter(test_loader))
+        
+        # Move data to CPU (if not already)
+        batch_x = batch_x.float().cpu()
+        batch_y = batch_y.float().cpu()
+        batch_x_mark = batch_x_mark.float().cpu()
+        batch_y_mark = batch_y_mark.float().cpu()
+        
+        # Prepare decoder input
+        dec_inp = torch.zeros_like(batch_y[:, -self.args.pred_len:, :]).float()
+        dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().cpu()
+        
+        # Warm-up (1 pass)
+        print("Warming up CPU inference...")
+        with torch.no_grad():
+            _ = model_cpu(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+        
+        # Benchmark (single inference)
+        print("Running CPU inference benchmark...")
+        with torch.no_grad():
+            start_time = time.time()
+            output = model_cpu(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+            end_time = time.time()
+        
+        inference_time_ms = (end_time - start_time) * 1000
+        samples_in_batch = batch_x.size(0)
+        latency_per_sample_ms = inference_time_ms / samples_in_batch
+        
+        print(f"\n📊 CPU Inference Results:")
+        print(f"  Batch size:          {samples_in_batch}")
+        print(f"  Total inference time: {inference_time_ms:.2f} ms")
+        print(f"  Latency per sample:   {latency_per_sample_ms:.2f} ms/sample")
+        print(f"  Throughput:           {1000/latency_per_sample_ms:.2f} samples/sec")
+        print("="*80 + "\n")
+        
+        # Move model back to original device
+        if original_device.type != 'cpu':
+            print(f"Moving model back to {original_device}...")
+            if isinstance(self.model, nn.DataParallel):
+                self.model.module.to(original_device)
+            else:
+                self.model.to(original_device)
+        
+        return {
+            'batch_size': samples_in_batch,
+            'inference_time_ms': inference_time_ms,
+            'latency_per_sample_ms': latency_per_sample_ms,
+            'throughput_samples_per_sec': 1000 / latency_per_sample_ms
+        }
+    
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
         
