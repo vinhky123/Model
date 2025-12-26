@@ -3,7 +3,7 @@ import torch
 from models import Autoformer, Transformer, TimesNet, Nonstationary_Transformer, DLinear, FEDformer, \
     Informer, LightTS, Reformer, ETSformer, Pyraformer, PatchTST, MICN, Crossformer, FiLM, iTransformer, \
     Koopa, TiDE, FreTS, TimeMixer, TSMixer, SegRNN, MambaSimple, TemporalFusionTransformer, SCINet, PAttn, TimeXer, \
-    WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter, Sundial, TimeMoE, TimeStar, TimeStarMamba, LSTM, GRU, ARIMA, SARIMAX, LSTNet
+    WPMixer, MultiPatchFormer, KANAD, MSGNet, TimeFilter, Sundial, TimeMoE, TimeStar, TimeStarMamba, TimeStarSimple, LSTM, GRU, ARIMA, SARIMAX, LSTNet
 
 
 class Exp_Basic(object):
@@ -46,6 +46,7 @@ class Exp_Basic(object):
             'TimeMoE': TimeMoE,
             'TimeStar': TimeStar,
             'TimeStarMamba': TimeStarMamba,
+            'TimeStarSimple': TimeStarSimple,
             'LSTM': LSTM,
             'GRU': GRU,
             'ARIMA': ARIMA,
