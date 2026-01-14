@@ -36,13 +36,16 @@ python simple_demo.py --model TimeXer --data ETTh1 --sample_idx 0
 ## 📊 Arguments
 
 ```
---model       Model name (default: TimeStar)
---data        Dataset name (default: ETTm2)
-              Options: ETTh1, ETTh2, ETTm1, ETTm2, weather
---sample_idx  Sample index (default: 0)
-              Range: 0 to N-1 (N = number of test samples)
---channel     Channel to visualize (default: 0)
-              Range: 0 to C-1 (C = number of channels)
+--model          Model name (default: TimeStar)
+--data           Dataset name (default: ETTm2)
+                 Options: ETTh1, ETTh2, ETTm1, ETTm2, weather
+--sample_idx     Sample index (default: 0)
+                 Range: 0 to N-1 (N = number of test samples)
+--channel        Channel to visualize (default: 0)
+                 Range: 0 to C-1 (C = number of channels)
+--find_best      Find top-k samples with lowest MSE (flag)
+--top_k          Number of best samples to show (default: 10)
+--visualize_best Visualize all top-k best samples (flag)
 ```
 
 ## 📁 Checkpoint Location
@@ -98,6 +101,62 @@ Loading Model: TimeStar (Dataset: ETTm2)
 - **Red dashed**: Ground truth (96 timesteps)
 - **Vertical line**: Prediction start point
 - **Title**: Includes metrics (MAE, MSE, RMSE)
+
+## 🔍 Find Best Samples
+
+### Find top 10 samples with lowest MSE:
+```bash
+python simple_demo.py --find_best
+```
+
+Output:
+```
+============================================================
+🔍 Finding Top 10 Best Samples (Lowest MSE)
+============================================================
+Evaluating 2881 samples...
+   Processed 100/2881 samples...
+   Processed 200/2881 samples...
+   ...
+
+============================================================
+🏆 Top 10 Samples with Lowest MSE
+============================================================
+Rank   Sample   MSE          MAE          RMSE        
+------------------------------------------------------------
+1      1523     0.042318     0.156234     0.205712
+2      0847     0.045123     0.162341     0.212453
+3      2134     0.048567     0.168923     0.220379
+4      0234     0.051234     0.175612     0.226341
+5      1876     0.053421     0.179234     0.231234
+6      0456     0.055678     0.183456     0.235912
+7      1298     0.057234     0.187234     0.239234
+8      2456     0.059123     0.191234     0.243123
+9      0789     0.061234     0.195234     0.247456
+10     1567     0.063456     0.199456     0.251923
+
+📊 Statistics:
+   Best MSE:    0.042318 (Sample 1523)
+   Worst MSE:   2.345678 (Sample 789)
+   Average MSE: 0.234567
+   Median MSE:  0.198765
+```
+
+### Find top 20 best samples:
+```bash
+python simple_demo.py --find_best --top_k 20
+```
+
+### Find and visualize top 5 best samples:
+```bash
+python simple_demo.py --find_best --top_k 5 --visualize_best
+```
+→ Will show charts for all 5 best samples
+
+### Find best samples for specific model/dataset:
+```bash
+python simple_demo.py --model TimeXer --data ETTh1 --find_best
+```
 
 ## 🎯 Examples
 

@@ -348,12 +348,88 @@ def plot_results(input_seq, prediction, ground_truth, channel_idx=0, sample_idx=
     plt.show()
 
 
+def find_best_samples(exp, data_loader, top_k=10):
+    """Find samples with lowest MSE"""
+    print(f"\n{'='*60}")
+    print(f"🔍 Finding Top {top_k} Best Samples (Lowest MSE)")
+    print(f"{'='*60}")
+    print(f"Evaluating {len(data_loader)} samples...")
+    
+    results = []
+    
+    # Evaluate all samples
+    for sample_idx, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(data_loader):
+        # Prepare input
+        batch_x = batch_x.float()
+        batch_y = batch_y.float()
+        batch_x_mark = batch_x_mark.float()
+        batch_y_mark = batch_y_mark.float()
+        
+        # Decoder input
+        dec_inp = torch.zeros_like(batch_y[:, -exp.args.pred_len:, :]).float()
+        dec_inp = torch.cat([batch_y[:, :exp.args.label_len, :], dec_inp], dim=1).float()
+        
+        # Inference
+        with torch.no_grad():
+            outputs = exp.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+        
+        # Extract predictions
+        f_dim = -1 if exp.args.features == 'MS' else 0
+        outputs = outputs[:, -exp.args.pred_len:, f_dim:]
+        batch_y = batch_y[:, -exp.args.pred_len:, f_dim:]
+        
+        # Convert to numpy
+        prediction = outputs[0].detach().cpu().numpy()
+        ground_truth = batch_y[0].detach().cpu().numpy()
+        
+        # Calculate metrics
+        mae = np.mean(np.abs(prediction - ground_truth))
+        mse = np.mean((prediction - ground_truth) ** 2)
+        rmse = np.sqrt(mse)
+        
+        results.append({
+            'sample_idx': sample_idx,
+            'mae': mae,
+            'mse': mse,
+            'rmse': rmse
+        })
+        
+        # Progress indicator
+        if (sample_idx + 1) % 100 == 0:
+            print(f"   Processed {sample_idx + 1}/{len(data_loader)} samples...")
+    
+    # Sort by MSE
+    results.sort(key=lambda x: x['mse'])
+    
+    # Display top k
+    print(f"\n{'='*60}")
+    print(f"🏆 Top {top_k} Samples with Lowest MSE")
+    print(f"{'='*60}")
+    print(f"{'Rank':<6} {'Sample':<8} {'MSE':<12} {'MAE':<12} {'RMSE':<12}")
+    print("-" * 60)
+    
+    for rank, result in enumerate(results[:top_k], 1):
+        print(f"{rank:<6} {result['sample_idx']:<8} "
+              f"{result['mse']:<12.6f} {result['mae']:<12.6f} {result['rmse']:<12.6f}")
+    
+    print(f"\n📊 Statistics:")
+    print(f"   Best MSE:    {results[0]['mse']:.6f} (Sample {results[0]['sample_idx']})")
+    print(f"   Worst MSE:   {results[-1]['mse']:.6f} (Sample {results[-1]['sample_idx']})")
+    print(f"   Average MSE: {np.mean([r['mse'] for r in results]):.6f}")
+    print(f"   Median MSE:  {np.median([r['mse'] for r in results]):.6f}")
+    
+    return results[:top_k]
+
+
 def main():
     parser = argparse.ArgumentParser(description='Simple Time Series Forecasting Demo')
     parser.add_argument('--model', type=str, default='TimeStar', help='Model name')
     parser.add_argument('--data', type=str, default='ETTm2', help='Dataset name')
     parser.add_argument('--sample_idx', type=int, default=0, help='Sample index to visualize')
     parser.add_argument('--channel', type=int, default=0, help='Channel to visualize')
+    parser.add_argument('--find_best', action='store_true', help='Find top 10 samples with lowest MSE')
+    parser.add_argument('--top_k', type=int, default=10, help='Number of best samples to show (default: 10)')
+    parser.add_argument('--visualize_best', action='store_true', help='Visualize all top-k best samples')
     
     args = parser.parse_args()
     
@@ -368,6 +444,29 @@ def main():
         # 2. Load data
         data_set, data_loader = load_data(model_args)
         
+        # Mode 1: Find best samples
+        if args.find_best:
+            best_samples = find_best_samples(exp, data_loader, top_k=args.top_k)
+            
+            # Optionally visualize all best samples
+            if args.visualize_best:
+                print(f"\n📊 Visualizing top {args.top_k} best samples...")
+                for result in best_samples:
+                    sample_idx = result['sample_idx']
+                    print(f"\n--- Sample {sample_idx} (MSE: {result['mse']:.6f}) ---")
+                    
+                    # Run inference
+                    input_seq, prediction, ground_truth = run_inference(exp, data_loader, sample_idx)
+                    
+                    # Plot
+                    plot_results(input_seq, prediction, ground_truth, args.channel, sample_idx)
+            
+            print(f"\n{'='*60}")
+            print("✅ Best samples search completed!")
+            print(f"{'='*60}\n")
+            return 0
+        
+        # Mode 2: Visualize specific sample
         # Validate sample_idx
         if args.sample_idx >= len(data_set):
             print(f"\n⚠️  Sample index {args.sample_idx} out of range!")
