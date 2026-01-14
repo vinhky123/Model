@@ -104,6 +104,55 @@ class SimpleArgs:
         self.batch_size = 1
 
 
+def parse_config_from_checkpoint_name(checkpoint_dir_name):
+    """Parse model config from checkpoint directory name"""
+    import re
+    
+    config = {}
+    
+    # Extract d_model (dm256 → 256)
+    dm_match = re.search(r'_dm(\d+)_', checkpoint_dir_name)
+    if dm_match:
+        config['d_model'] = int(dm_match.group(1))
+    
+    # Extract n_heads (nh8 → 8)
+    nh_match = re.search(r'_nh(\d+)_', checkpoint_dir_name)
+    if nh_match:
+        config['n_heads'] = int(nh_match.group(1))
+    
+    # Extract e_layers (el2 → 2)
+    el_match = re.search(r'_el(\d+)_', checkpoint_dir_name)
+    if el_match:
+        config['e_layers'] = int(el_match.group(1))
+    
+    # Extract d_layers (dl1 → 1)
+    dl_match = re.search(r'_dl(\d+)_', checkpoint_dir_name)
+    if dl_match:
+        config['d_layers'] = int(dl_match.group(1))
+    
+    # Extract d_ff (df2048 → 2048)
+    df_match = re.search(r'_df(\d+)_', checkpoint_dir_name)
+    if df_match:
+        config['d_ff'] = int(df_match.group(1))
+    
+    # Extract expand (expand2 → 2)
+    expand_match = re.search(r'_expand(\d+)_', checkpoint_dir_name)
+    if expand_match:
+        config['expand'] = int(expand_match.group(1))
+    
+    # Extract d_conv (dc4 → 4)
+    dc_match = re.search(r'_dc(\d+)_', checkpoint_dir_name)
+    if dc_match:
+        config['d_conv'] = int(dc_match.group(1))
+    
+    # Extract factor (fc3 → 3)
+    fc_match = re.search(r'_fc(\d+)_', checkpoint_dir_name)
+    if fc_match:
+        config['factor'] = int(fc_match.group(1))
+    
+    return config
+
+
 def find_checkpoint(model_name, data_name):
     """Find checkpoint directory for given model and data"""
     checkpoint_dir = Path('./checkpoints/')
@@ -129,13 +178,23 @@ def find_checkpoint(model_name, data_name):
             print(f"   - {d.name}")
         raise FileNotFoundError(f"Checkpoint not found")
     
-    checkpoint_path = matching_dirs[0] / 'checkpoint.pth'
+    checkpoint_dir_path = matching_dirs[0]
+    checkpoint_path = checkpoint_dir_path / 'checkpoint.pth'
     
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"checkpoint.pth not found in {matching_dirs[0]}")
+        raise FileNotFoundError(f"checkpoint.pth not found in {checkpoint_dir_path}")
     
     print(f"✅ Found checkpoint: {checkpoint_path}")
-    return checkpoint_path
+    
+    # Parse config from directory name
+    config = parse_config_from_checkpoint_name(checkpoint_dir_path.name)
+    
+    if config:
+        print(f"📝 Parsed config from checkpoint:")
+        for key, value in config.items():
+            print(f"   {key}: {value}")
+    
+    return checkpoint_path, config
 
 
 def load_model(model_name, data_name):
@@ -146,13 +205,20 @@ def load_model(model_name, data_name):
     print(f"Loading Model: {model_name} (Dataset: {data_name})")
     print(f"{'='*60}")
     
-    # Create args
+    # Create args with default config
     args = SimpleArgs(model_name, data_name)
     
-    # Find checkpoint
-    checkpoint_path = find_checkpoint(model_name, data_name)
+    # Find checkpoint and parse config
+    checkpoint_path, parsed_config = find_checkpoint(model_name, data_name)
     
-    # Create experiment
+    # Update args with parsed config from checkpoint
+    if parsed_config:
+        for key, value in parsed_config.items():
+            if hasattr(args, key):
+                setattr(args, key, value)
+                print(f"   Updated {key} = {value}")
+    
+    # Create experiment with updated config
     exp = Exp_Long_Term_Forecast(args)
     
     # Load checkpoint
