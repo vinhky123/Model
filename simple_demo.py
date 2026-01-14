@@ -314,13 +314,13 @@ def plot_results(input_seq, prediction, ground_truth, channel_idx=0, sample_idx=
     x_pred = np.arange(seq_len, seq_len + pred_len)
     
     # Plot input
-    plt.plot(x_input, input_data, 'b-', label='Input', linewidth=2, marker='o', markersize=3)
+    plt.plot(x_input, input_data, 'b-', label='Input', linewidth=2)
     
     # Plot prediction
-    plt.plot(x_pred, pred_data, 'g-', label='Prediction', linewidth=2, marker='s', markersize=3)
+    plt.plot(x_pred, pred_data, 'g-', label='Prediction', linewidth=2)
     
     # Plot ground truth
-    plt.plot(x_pred, gt_data, 'r--', label='Ground Truth', linewidth=2, marker='^', markersize=3)
+    plt.plot(x_pred, gt_data, 'r--', label='Ground Truth', linewidth=2)
     
     # Add vertical line at prediction start
     plt.axvline(x=seq_len, color='gray', linestyle=':', linewidth=1.5, alpha=0.7)
@@ -338,12 +338,13 @@ def plot_results(input_seq, prediction, ground_truth, channel_idx=0, sample_idx=
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     
-    # Save figure
+    # Save figure first
     output_file = f'demo_output_sample{sample_idx}_channel{channel_idx}.png'
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     print(f"💾 Saved plot to: {output_file}")
     
-    # Show plot
+    # Show plot (blocking - will wait for user to close window)
+    print(f"📊 Displaying plot... (close window to continue)")
     plt.show()
 
 
