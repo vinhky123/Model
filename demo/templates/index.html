@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Series Forecasting Demo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ Time Series Forecasting Demo</h1>
+            <p class="subtitle">Deep Learning Model Inference Visualization</p>
+        </header>
+
+        <div class="control-panel">
+            <div class="card">
+                <h2>🎛️ Controls</h2>
+                
+                <div class="form-group">
+                    <label for="modelSelect">Select Model:</label>
+                    <select id="modelSelect" class="input">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <button id="loadModelBtn" class="btn btn-primary">Load Model</button>
+                </div>
+
+                <div class="form-group">
+                    <label for="sampleIdx">Sample Index:</label>
+                    <input type="number" id="sampleIdx" class="input" value="0" min="0">
+                    <span id="sampleRange" class="hint">Range: 0 - ?</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="channelIdx">Channel:</label>
+                    <select id="channelIdx" class="input">
+                        <option value="0">Channel 0</option>
+                        <option value="1">Channel 1</option>
+                        <option value="2">Channel 2</option>
+                        <option value="3">Channel 3</option>
+                        <option value="4">Channel 4</option>
+                        <option value="5">Channel 5</option>
+                        <option value="6">Channel 6</option>
+                    </select>
+                </div>
+
+                <button id="inferBtn" class="btn btn-success" disabled>Run Inference</button>
+            </div>
+
+            <div class="card info-card">
+                <h3>📊 Model Info</h3>
+                <div id="modelInfo">
+                    <p class="no-data">No model loaded</p>
+                </div>
+            </div>
+
+            <div class="card metrics-card">
+                <h3>📈 Metrics</h3>
+                <div id="metrics">
+                    <p class="no-data">Run inference to see metrics</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="visualization">
+            <div class="card chart-card">
+                <h2>📉 Visualization</h2>
+                <canvas id="chart"></canvas>
+            </div>
+        </div>
+
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
+

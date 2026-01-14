@@ -1,0 +1,105 @@
+================================
+DEMO QUICK START - Windows
+================================
+
+Nếu run_demo.bat bị crash nhanh:
+
+1. CHẠY DEBUG TRƯỚC:
+   > debug_demo.bat
+   
+   File này sẽ check tất cả requirements và pause để mày đọc lỗi.
+   Nó sẽ check:
+   - Python có cài chưa
+   - pip có work không
+   - Demo files có đủ không
+   - Dataset có chưa
+   - Dependencies install được không
+   - Python imports có work không
+
+2. NẾU DEBUG OK, CHẠY MANUAL:
+   > manual_run_demo.bat
+   
+   File này chỉ đơn giản cd vào demo và chạy app.py
+   Lỗi gì sẽ hiện ra và pause để mày đọc.
+
+3. HOẶC CHẠY BẰTAY:
+   > cd demo
+   > pip install -r requirements.txt
+   > python app.py
+   
+   Mở Command Prompt (CMD) và gõ từng lệnh.
+
+================================
+LỖI THƯỜNG GẶP
+================================
+
+LỖI 1: "Python not found"
+→ Cài Python 3.8+ từ python.org
+→ Nhớ tick "Add Python to PATH" khi install
+
+LỖI 2: "No module named 'flask'"
+→ Chạy: pip install flask torch numpy pandas
+
+LỖI 3: "demo directory not found"
+→ Phải chạy từ thư mục gốc project (có folder demo/ ở trong)
+
+LỖI 4: "data_provider not found"
+→ Phải chạy từ thư mục gốc project
+→ Cần có folder: data_provider/, models/, exp/
+
+LỖI 5: "No checkpoint found"
+→ Copy checkpoints vào folder params/:
+   mkdir params
+   copy checkpoints\* params\
+
+LỖI 6: "ETTm2.csv not found"
+→ Đảm bảo file ở: dataset\ETT-small\ETTm2.csv
+
+================================
+CẤU TRÚC THỦ MỤC ĐÚNG
+================================
+
+D:\Data\Codes\Model\
+├── demo\
+│   ├── app.py
+│   ├── requirements.txt
+│   ├── templates\
+│   │   └── index.html
+│   └── static\
+│       ├── style.css
+│       └── script.js
+├── params\               ← Cần copy checkpoints vào đây
+│   └── long_term_forecast_*\
+│       └── checkpoint.pth
+├── dataset\
+│   └── ETT-small\
+│       └── ETTm2.csv
+├── data_provider\        ← Cần có để import
+├── models\               ← Cần có để import
+├── exp\                  ← Cần có để import
+├── run_demo.bat          ← Chạy full auto (có thể crash nhanh)
+├── debug_demo.bat        ← Chạy để check lỗi (có pause)
+└── manual_run_demo.bat   ← Chạy đơn giản nhất (có pause)
+
+================================
+CHẠY THÀNH CÔNG THÌ SẼ THẤY
+================================
+
+Starting demo server...
+Use GPU: cuda:0  (hoặc Use CPU)
+Loading model: TimeStar
+...
+* Running on http://0.0.0.0:5000
+
+→ Mở browser: http://localhost:5000
+
+================================
+CONTACT
+================================
+
+Nếu vẫn lỗi, copy toàn bộ error message và hỏi AI hoặc check:
+- Python version: python --version (cần 3.8+)
+- pip version: pip --version
+- Folder location: dir (xem có đúng cấu trúc không)
+
+
